@@ -36,8 +36,26 @@ npm run format         # Prettier (schrijft)
 npm run build          # productie-build van alle workspaces
 ```
 
+## API (fase 1)
+
+Auth via httpOnly sessie-cookie; wachtwoorden met argon2id. Tenant-isolatie: elke
+query is gefilterd op de school van de ingelogde gebruiker.
+
+- `POST /api/auth/register-school` — maak school + eerste admin (logt direct in)
+- `POST /api/auth/login` — inloggen
+- `POST /api/auth/logout` — uitloggen
+- `GET  /api/auth/me` — huidige gebruiker
+- `POST /api/users` — (admin) leraar/student aanmaken in eigen school
+- `GET  /api/users` — (admin/leraar) gebruikers van eigen school
+
+```bash
+npm run test -w server   # integratietests, incl. tenant-isolatie
+```
+
 ## Status
 
-Fase 0 (fundament) is opgezet. Volgende fases: auth & rollen, camera-apparaten,
-websockets, planning, opnemen/uploaden, terugkijken, samengevoegde rastervideo,
-beveiliging/uitrol. Zie het projectplan.
+- **Fase 0** — fundament (monorepo, TS strict, lint/format, Fastify, Vite, Prisma). ✅
+- **Fase 1** — school, login, rollen (admin/leraar/student), tenant-isolatie + tests. ✅
+
+Volgende fases: camera-apparaten, websockets, planning, opnemen/uploaden,
+terugkijken, samengevoegde rastervideo, beveiliging/uitrol. Zie het projectplan.

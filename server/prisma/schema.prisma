@@ -1,6 +1,5 @@
 // PracticeRoom database schema.
 // Provider is SQLite for a zero-install, self-hosted small setup.
-// Data models (School, User, Device, Lesson, ...) are added in Phase 1+.
 
 generator client {
   provider = "prisma-client-js"
@@ -9,4 +8,43 @@ generator client {
 datasource db {
   provider = "sqlite"
   url      = env("DATABASE_URL")
+}
+
+/// A music school. The tenant boundary: all data belongs to exactly one school
+/// and is never visible across schools.
+model School {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+
+  users User[]
+}
+
+/// A person within a school. Role is stored as a string because SQLite has no
+/// native enums; it is validated against the shared `Role` contract in code.
+model User {
+  id           String   @id @default(cuid())
+  schoolId     String
+  email        String   @unique // globally unique so login needs only email + password
+  name         String
+  role         String // 'admin' | 'teacher' | 'student'
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  school   School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  sessions Session[]
+
+  @@index([schoolId])
+}
+
+/// A server-side login session, referenced by an opaque httpOnly cookie token.
+model Session {
+  id        String   @id // high-entropy random token (also the cookie value)
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
