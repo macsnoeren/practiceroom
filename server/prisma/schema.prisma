@@ -1,0 +1,12 @@
+// PracticeRoom database schema.
+// Provider is SQLite for a zero-install, self-hosted small setup.
+// Data models (School, User, Device, Lesson, ...) are added in Phase 1+.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
