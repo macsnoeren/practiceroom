@@ -1,48 +1,67 @@
 import { useEffect, useState } from 'react';
-import { APP_NAME, HealthResponseSchema, type HealthResponse } from '@practiceroom/shared';
+import { APP_NAME, type UserDto } from '@practiceroom/shared';
+import { ApiError, api } from './api.js';
+import { AuthScreen } from './components/AuthScreen.js';
+import { UserManagement } from './components/UserManagement.js';
 
-type Status =
-  | { kind: 'loading' }
-  | { kind: 'ok'; health: HealthResponse }
-  | { kind: 'error'; message: string };
+type AuthState = { kind: 'loading' } | { kind: 'authenticated'; user: UserDto } | { kind: 'anon' };
 
 export function App() {
-  const [status, setStatus] = useState<Status>({ kind: 'loading' });
+  const [auth, setAuth] = useState<AuthState>({ kind: 'loading' });
 
   useEffect(() => {
-    const controller = new AbortController();
-
-    fetch('/api/health', { signal: controller.signal })
-      .then((res) => res.json())
-      .then((data: unknown) => {
-        // Validate the server response against the shared contract.
-        const health = HealthResponseSchema.parse(data);
-        setStatus({ kind: 'ok', health });
-      })
+    api
+      .me()
+      .then((user) => setAuth({ kind: 'authenticated', user }))
       .catch((err: unknown) => {
-        if (err instanceof DOMException && err.name === 'AbortError') return;
-        setStatus({ kind: 'error', message: String(err) });
+        // 401 simply means not logged in; anything else we also treat as anon.
+        if (!(err instanceof ApiError)) console.error(err);
+        setAuth({ kind: 'anon' });
       });
-
-    return () => controller.abort();
   }, []);
 
+  async function logout() {
+    await api.logout().catch(() => undefined);
+    setAuth({ kind: 'anon' });
+  }
+
   return (
-    <main style={{ fontFamily: 'system-ui, sans-serif', maxWidth: 640, margin: '4rem auto' }}>
+    <div className="container">
       <h1>{APP_NAME}</h1>
-      <p>Fase 0 — fundament staat.</p>
-      <section>
-        <h2>Server-verbinding</h2>
-        {status.kind === 'loading' && <p>Bezig met verbinden…</p>}
-        {status.kind === 'ok' && (
-          <p style={{ color: 'green' }}>
-            ✅ Verbonden met {status.health.app} ({status.health.time})
-          </p>
-        )}
-        {status.kind === 'error' && (
-          <p style={{ color: 'crimson' }}>❌ Geen verbinding: {status.message}</p>
-        )}
-      </section>
-    </main>
+
+      {auth.kind === 'loading' && <p className="muted">Laden…</p>}
+
+      {auth.kind === 'anon' && (
+        <AuthScreen onAuthenticated={(user) => setAuth({ kind: 'authenticated', user })} />
+      )}
+
+      {auth.kind === 'authenticated' && (
+        <>
+          <div className="card">
+            <div className="row">
+              <div>
+                Ingelogd als <strong>{auth.user.name}</strong>{' '}
+                <span className="tag">{auth.user.role}</span>
+                <div className="muted">{auth.user.email}</div>
+              </div>
+              <button type="button" className="secondary" onClick={logout}>
+                Uitloggen
+              </button>
+            </div>
+          </div>
+
+          {auth.user.role === 'student' ? (
+            <div className="card">
+              <p>
+                Welkom! Hier komen straks jouw geplande lessen en opnames om terug te kijken
+                (volgende fases).
+              </p>
+            </div>
+          ) : (
+            <UserManagement canCreate={auth.user.role === 'admin'} />
+          )}
+        </>
+      )}
+    </div>
   );
 }
