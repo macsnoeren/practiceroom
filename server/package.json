@@ -8,7 +8,7 @@
     "build": "tsup",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "test": "node --env-file=.env.test --import tsx --test --test-concurrency=1 test/auth.test.ts test/devices.test.ts",
+    "test": "node --env-file=.env.test --import tsx --test --test-concurrency=1 test/auth.test.ts test/devices.test.ts test/realtime.test.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
@@ -23,10 +23,12 @@
     "@prisma/client": "^6.1.0",
     "dotenv": "^16.4.7",
     "fastify": "^5.2.0",
+    "socket.io": "^4.8.3",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "prisma": "^6.1.0",
+    "socket.io-client": "^4.8.3",
     "tsup": "^8.3.5"
   }
 }

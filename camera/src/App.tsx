@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { PairDeviceSchema } from '@practiceroom/shared';
 import { ApiError, cameraApi, clearToken, getToken, setToken } from './api.js';
 import { CameraPreview } from './components/CameraPreview.js';
+import { useDeviceSocket } from './useDeviceSocket.js';
 
 type State =
   | { kind: 'loading' }
@@ -40,22 +41,42 @@ export function App() {
         <PairForm onPaired={(device) => setState({ kind: 'paired', device })} />
       )}
 
-      {state.kind === 'paired' && (
-        <>
-          <div className="card row">
-            <div>
-              Gekoppeld als <strong>{state.device.name}</strong>
-            </div>
-            <button type="button" className="secondary" onClick={unpair}>
-              Ontkoppelen
-            </button>
-          </div>
-          <div className="card">
-            <CameraPreview />
-          </div>
-        </>
-      )}
+      {state.kind === 'paired' && <PairedView device={state.device} onUnpair={unpair} />}
     </div>
+  );
+}
+
+function PairedView({
+  device,
+  onUnpair,
+}: {
+  device: { id: string; name: string };
+  onUnpair: () => void;
+}) {
+  const { connected, recordingRequested } = useDeviceSocket();
+
+  return (
+    <>
+      <div className="card row">
+        <div>
+          Gekoppeld als <strong>{device.name}</strong>
+          <div className="muted">{connected ? '● verbonden met server' : '○ niet verbonden'}</div>
+        </div>
+        <button type="button" className="secondary" onClick={onUnpair}>
+          Ontkoppelen
+        </button>
+      </div>
+
+      {recordingRequested && (
+        <div className="card recording">
+          ● Opname gevraagd door de leraar. (Het daadwerkelijk opnemen volgt in een latere fase.)
+        </div>
+      )}
+
+      <div className="card">
+        <CameraPreview />
+      </div>
+    </>
   );
 }
 

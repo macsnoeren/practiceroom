@@ -105,3 +105,10 @@ button:disabled {
   background: #000;
   aspect-ratio: 16 / 9;
 }
+
+.card.recording {
+  border-color: #c0392b;
+  background: #fdecea;
+  color: #c0392b;
+  font-weight: 600;
+}

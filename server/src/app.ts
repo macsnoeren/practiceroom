@@ -3,13 +3,14 @@ import cors from '@fastify/cors';
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
 import { ZodError } from 'zod';
-import { env } from './env.js';
+import { corsOrigins, env } from './env.js';
 import { HttpError } from './lib/errors.js';
 import { registerAuth } from './auth/plugin.js';
 import { healthRoutes } from './routes/health.js';
 import { authRoutes } from './routes/auth.js';
 import { userRoutes } from './routes/users.js';
 import { deviceRoutes } from './routes/devices.js';
+import { setupRealtime } from './realtime/io.js';
 
 /**
  * Builds the Fastify app without starting it, so tests can drive it via
@@ -22,7 +23,7 @@ export async function buildApp() {
   });
 
   // Plugins. Order matters: cookies must be parsed before auth reads them.
-  await app.register(cors, { origin: env.CORS_ORIGIN, credentials: true });
+  await app.register(cors, { origin: corsOrigins, credentials: true });
   await app.register(cookie);
   await app.register(rateLimit, { max: 200, timeWindow: '1 minute' });
   await registerAuth(app);
@@ -48,6 +49,9 @@ export async function buildApp() {
   await app.register(authRoutes);
   await app.register(userRoutes);
   await app.register(deviceRoutes);
+
+  // Realtime layer (presence + command channel) on the same HTTP server.
+  app.decorate('io', setupRealtime(app));
 
   return app;
 }

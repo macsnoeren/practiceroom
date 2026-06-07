@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { CreateDeviceSchema, type DeviceDto } from '@practiceroom/shared';
 import { ApiError, api } from '../api.js';
+import { usePresence } from '../usePresence.js';
 
 interface ActiveCode {
   deviceId: string;
@@ -14,6 +15,7 @@ export function DeviceManagement() {
   const [activeCode, setActiveCode] = useState<ActiveCode | null>(null);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
+  const { online, statuses, startRecording, stopRecording } = usePresence();
 
   const refresh = useCallback(async () => {
     setError(null);
@@ -122,39 +124,67 @@ export function DeviceManagement() {
             <tr>
               <th>Naam</th>
               <th>Status</th>
-              <th>Laatst gezien</th>
+              <th>Live</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
-            {devices.map((d) => (
-              <tr key={d.id}>
-                <td>{d.name}</td>
-                <td>
-                  {d.paired ? (
-                    <span className="tag tag-ok">gekoppeld</span>
-                  ) : (
-                    <span className="tag">niet gekoppeld</span>
-                  )}
-                </td>
-                <td>{d.lastSeenAt ? new Date(d.lastSeenAt).toLocaleString() : '—'}</td>
-                <td className="actions">
-                  {!d.paired && (
-                    <button type="button" className="linkbtn" onClick={() => regenerate(d.id)}>
-                      Koppelcode
+            {devices.map((d) => {
+              const isOnline = online.has(d.id);
+              const state = statuses[d.id];
+              return (
+                <tr key={d.id}>
+                  <td>{d.name}</td>
+                  <td>
+                    {d.paired ? (
+                      <span className="tag tag-ok">gekoppeld</span>
+                    ) : (
+                      <span className="tag">niet gekoppeld</span>
+                    )}
+                  </td>
+                  <td>
+                    {isOnline ? (
+                      <span className="tag tag-ok">● online{state ? ` (${state})` : ''}</span>
+                    ) : (
+                      <span className="tag">offline</span>
+                    )}
+                  </td>
+                  <td className="actions">
+                    {isOnline && (
+                      <>
+                        <button
+                          type="button"
+                          className="linkbtn"
+                          onClick={() => startRecording([d.id])}
+                        >
+                          Start (test)
+                        </button>
+                        <button
+                          type="button"
+                          className="linkbtn"
+                          onClick={() => stopRecording([d.id])}
+                        >
+                          Stop (test)
+                        </button>
+                      </>
+                    )}
+                    {!d.paired && (
+                      <button type="button" className="linkbtn" onClick={() => regenerate(d.id)}>
+                        Koppelcode
+                      </button>
+                    )}
+                    {d.paired && (
+                      <button type="button" className="linkbtn" onClick={() => revoke(d.id)}>
+                        Intrekken
+                      </button>
+                    )}
+                    <button type="button" className="linkbtn danger" onClick={() => remove(d.id)}>
+                      Verwijderen
                     </button>
-                  )}
-                  {d.paired && (
-                    <button type="button" className="linkbtn" onClick={() => revoke(d.id)}>
-                      Intrekken
-                    </button>
-                  )}
-                  <button type="button" className="linkbtn danger" onClick={() => remove(d.id)}>
-                    Verwijderen
-                  </button>
-                </td>
-              </tr>
-            ))}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}

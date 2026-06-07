@@ -138,3 +138,68 @@ export const DeviceSelfSchema = z.object({
   schoolId: z.string(),
 });
 export type DeviceSelf = z.infer<typeof DeviceSelfSchema>;
+
+/* -------------------------------------------------------------------------- */
+/* Realtime (Socket.IO)                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Event names used on the websocket. Centralised so client and server cannot
+ * drift. Direction is noted per event.
+ */
+export const SOCKET_EVENTS = {
+  /** server -> staff: full list of currently online devices (on connect). */
+  presenceSnapshot: 'presence:snapshot',
+  /** server -> staff: a device came online. */
+  deviceOnline: 'device:online',
+  /** server -> staff: a device went offline. */
+  deviceOffline: 'device:offline',
+  /** staff -> server -> device: begin recording on the given devices. */
+  recordingStart: 'recording:start',
+  /** staff -> server -> device: stop recording on the given devices. */
+  recordingStop: 'recording:stop',
+  /** device -> server: report its current state. */
+  statusUpdate: 'status:update',
+  /** server -> staff: a device reported a new state. */
+  deviceStatus: 'device:status',
+} as const;
+
+/** A device that is currently connected. */
+export const OnlineDeviceSchema = z.object({
+  deviceId: z.string(),
+  name: z.string(),
+});
+export type OnlineDevice = z.infer<typeof OnlineDeviceSchema>;
+
+export const PresenceSnapshotSchema = z.object({
+  devices: z.array(OnlineDeviceSchema),
+});
+export type PresenceSnapshot = z.infer<typeof PresenceSnapshotSchema>;
+
+export const DeviceOfflineSchema = z.object({ deviceId: z.string() });
+export type DeviceOffline = z.infer<typeof DeviceOfflineSchema>;
+
+/** Staff command targeting one or more devices in their own school. */
+export const RecordingCommandSchema = z.object({
+  deviceIds: z.array(z.string()).min(1),
+});
+export type RecordingCommandInput = z.infer<typeof RecordingCommandSchema>;
+
+export const DEVICE_STATES = ['idle', 'recording', 'error'] as const;
+export const DeviceStateSchema = z.enum(DEVICE_STATES);
+export type DeviceState = (typeof DEVICE_STATES)[number];
+
+/** Device -> server: a device's own status. */
+export const DeviceStatusSchema = z.object({
+  state: DeviceStateSchema,
+  message: z.string().max(300).optional(),
+});
+export type DeviceStatusInput = z.infer<typeof DeviceStatusSchema>;
+
+/** Server -> staff: a device's status, tagged with which device. */
+export const DeviceStatusUpdateSchema = z.object({
+  deviceId: z.string(),
+  state: DeviceStateSchema,
+  message: z.string().max(300).optional(),
+});
+export type DeviceStatusUpdate = z.infer<typeof DeviceStatusUpdateSchema>;

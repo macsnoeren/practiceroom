@@ -24,3 +24,8 @@ if (!parsed.success) {
 }
 
 export const env = parsed.data;
+
+/** Allowed browser origins (web dashboard + camera app), comma-separated. */
+export const corsOrigins = env.CORS_ORIGIN.split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);

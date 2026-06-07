@@ -71,6 +71,19 @@ npm run test -w server   # integratietests: tenant-isolatie, auth, device-pairin
 - **Fase 1** — school, login, rollen (admin/leraar/student), tenant-isolatie + tests. ✅
 - **Fase 2** — camera-apparaten: registreren + koppelcode, camera-app met
   getUserMedia-preview, device-token-auth + tests. ✅
+- **Fase 3** — realtime (Socket.IO): geauthenticeerde verbindingen (cookie voor
+  staff, device-token voor camera's), presence per school (live online/offline in
+  het dashboard) en een besturingskanaal (start/stop-opname) met school-isolatie
+  + tests. ✅
 
-Volgende fases: websockets (presence/besturing), planning, opnemen/uploaden,
-terugkijken, samengevoegde rastervideo, beveiliging/uitrol. Zie het projectplan.
+Volgende fases: planning (lessen), opnemen/uploaden, terugkijken,
+samengevoegde rastervideo, beveiliging/uitrol. Zie het projectplan.
+
+### Realtime (fase 3)
+
+WebSocket op dezelfde server (`/socket.io`). De camera-app verbindt met haar
+device-token (`auth.deviceToken`), het dashboard met de sessie-cookie. Iedereen
+zit in een room per school. Presence-events: `presence:snapshot`,
+`device:online`, `device:offline`. Besturing: `recording:start` / `recording:stop`
+(staff → alleen eigen-school-camera's), `status:update` (camera → staff als
+`device:status`).

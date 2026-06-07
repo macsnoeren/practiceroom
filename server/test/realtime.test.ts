@@ -1,0 +1,165 @@
+import assert from 'node:assert/strict';
+import { after, before, describe, it } from 'node:test';
+import type { AddressInfo } from 'node:net';
+import type { FastifyInstance } from 'fastify';
+import { io as ioClient, type Socket } from 'socket.io-client';
+import { SOCKET_EVENTS } from '@practiceroom/shared';
+import { prisma } from '../src/db.js';
+import { registerSchool, setupTestApp } from './helpers.js';
+
+let app: FastifyInstance;
+let baseUrl: string;
+const sockets: Socket[] = [];
+
+before(async () => {
+  app = await setupTestApp();
+  await app.listen({ port: 0, host: '127.0.0.1' });
+  const address = app.server.address() as AddressInfo;
+  baseUrl = `http://127.0.0.1:${address.port}`;
+});
+
+after(async () => {
+  for (const socket of sockets) socket.close();
+  if (app) await app.close();
+  await prisma.$disconnect();
+});
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function track(socket: Socket): Socket {
+  sockets.push(socket);
+  return socket;
+}
+
+function connectStaff(cookie: string): Socket {
+  return track(
+    ioClient(baseUrl, {
+      transports: ['websocket'],
+      reconnection: false,
+      extraHeaders: { Cookie: cookie },
+    }),
+  );
+}
+
+function connectDevice(token: string): Socket {
+  return track(
+    ioClient(baseUrl, {
+      transports: ['websocket'],
+      reconnection: false,
+      auth: { deviceToken: token },
+    }),
+  );
+}
+
+function waitConnect(socket: Socket, ms = 3000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('connect timeout')), ms);
+    socket.once('connect', () => {
+      clearTimeout(timer);
+      resolve();
+    });
+    socket.once('connect_error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+}
+
+function waitEvent<T = unknown>(socket: Socket, event: string, ms = 3000): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`timeout waiting for ${event}`)), ms);
+    socket.once(event, (payload: T) => {
+      clearTimeout(timer);
+      resolve(payload);
+    });
+  });
+}
+
+async function createPairedDevice(cookie: string, name: string) {
+  const create = await app.inject({
+    method: 'POST',
+    url: '/api/devices',
+    headers: { cookie },
+    payload: { name },
+  });
+  const body = create.json() as { device: { id: string }; pairingCode: string };
+  const pair = await app.inject({
+    method: 'POST',
+    url: '/api/devices/pair',
+    payload: { pairingCode: body.pairingCode },
+  });
+  return { id: body.device.id, token: (pair.json() as { token: string }).token };
+}
+
+describe('realtime: presence and command routing', () => {
+  it('rejects an unauthenticated connection', async () => {
+    const anon = track(ioClient(baseUrl, { transports: ['websocket'], reconnection: false }));
+    await assert.rejects(waitConnect(anon), /unauthorized|timeout/);
+  });
+
+  it('notifies staff when a device comes online and goes offline', async () => {
+    const a = await registerSchool(app, 'RT A', 'rt-a@example.com');
+    const device = await createPairedDevice(a.cookie, 'Cam A');
+
+    const staff = connectStaff(a.cookie);
+    // Register the snapshot listener before connecting; the server emits it
+    // immediately on connection and Socket.IO does not buffer unhandled events.
+    const snapshotPromise = waitEvent(staff, SOCKET_EVENTS.presenceSnapshot);
+    await waitConnect(staff);
+    await snapshotPromise;
+
+    const onlinePromise = waitEvent<{ deviceId: string }>(staff, SOCKET_EVENTS.deviceOnline);
+    const cam = connectDevice(device.token);
+    await waitConnect(cam);
+    const onlineMsg = await onlinePromise;
+    assert.equal(onlineMsg.deviceId, device.id);
+
+    const offlinePromise = waitEvent<{ deviceId: string }>(staff, SOCKET_EVENTS.deviceOffline);
+    cam.close();
+    const offlineMsg = await offlinePromise;
+    assert.equal(offlineMsg.deviceId, device.id);
+  });
+
+  it('includes already-online devices in the snapshot for late-joining staff', async () => {
+    const a = await registerSchool(app, 'RT Snap', 'rt-snap@example.com');
+    const device = await createPairedDevice(a.cookie, 'Cam Snap');
+
+    const cam = connectDevice(device.token);
+    await waitConnect(cam);
+    await delay(50);
+
+    const staff = connectStaff(a.cookie);
+    const snapshotPromise = waitEvent<{ devices: { deviceId: string }[] }>(
+      staff,
+      SOCKET_EVENTS.presenceSnapshot,
+    );
+    await waitConnect(staff);
+    const snapshot = await snapshotPromise;
+    assert.ok(snapshot.devices.some((d) => d.deviceId === device.id));
+  });
+
+  it('routes a command only to devices in the same school', async () => {
+    const a = await registerSchool(app, 'RT Cmd A', 'rt-cmd-a@example.com');
+    const b = await registerSchool(app, 'RT Cmd B', 'rt-cmd-b@example.com');
+    const deviceA = await createPairedDevice(a.cookie, 'A cam');
+    const deviceB = await createPairedDevice(b.cookie, 'B cam');
+
+    const staffA = connectStaff(a.cookie);
+    const camA = connectDevice(deviceA.token);
+    const camB = connectDevice(deviceB.token);
+    await Promise.all([waitConnect(staffA), waitConnect(camA), waitConnect(camB)]);
+
+    let bReceived = false;
+    camB.on(SOCKET_EVENTS.recordingStart, () => {
+      bReceived = true;
+    });
+    const aReceived = waitEvent(camA, SOCKET_EVENTS.recordingStart);
+
+    // Staff A targets both devices; only its own school's device may receive it.
+    staffA.emit(SOCKET_EVENTS.recordingStart, { deviceIds: [deviceA.id, deviceB.id] });
+
+    await aReceived; // device A got the command
+    await delay(150); // give any (wrong) delivery to B a chance
+    assert.equal(bReceived, false, "device B must not receive school A's command");
+  });
+});
