@@ -4,6 +4,8 @@ import { ApiError, api } from './api.js';
 import { AuthScreen } from './components/AuthScreen.js';
 import { UserManagement } from './components/UserManagement.js';
 import { DeviceManagement } from './components/DeviceManagement.js';
+import { LessonManagement } from './components/LessonManagement.js';
+import { StudentLessons } from './components/StudentLessons.js';
 
 type AuthState = { kind: 'loading' } | { kind: 'authenticated'; user: UserDto } | { kind: 'anon' };
 
@@ -52,16 +54,12 @@ export function App() {
           </div>
 
           {auth.user.role === 'student' ? (
-            <div className="card">
-              <p>
-                Welkom! Hier komen straks jouw geplande lessen en opnames om terug te kijken
-                (volgende fases).
-              </p>
-            </div>
+            <StudentLessons />
           ) : (
             <>
-              <UserManagement canCreate={auth.user.role === 'admin'} />
+              <LessonManagement isAdmin={auth.user.role === 'admin'} />
               <DeviceManagement />
+              <UserManagement canCreate={auth.user.role === 'admin'} />
             </>
           )}
         </>

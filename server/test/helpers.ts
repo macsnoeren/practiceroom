@@ -49,3 +49,28 @@ export async function registerSchool(
   assert.equal(res.statusCode, 201, res.body);
   return { cookie: sessionCookie(res.headers['set-cookie']), body: res.json() };
 }
+
+export async function login(app: FastifyInstance, email: string, password = 'supersecret') {
+  const res = await app.inject({
+    method: 'POST',
+    url: '/api/auth/login',
+    payload: { email, password },
+  });
+  assert.equal(res.statusCode, 200, res.body);
+  return sessionCookie(res.headers['set-cookie']);
+}
+
+export async function createUser(
+  app: FastifyInstance,
+  adminCookie: string,
+  user: { name: string; email: string; role: 'teacher' | 'student' },
+) {
+  const res = await app.inject({
+    method: 'POST',
+    url: '/api/users',
+    headers: { cookie: adminCookie },
+    payload: { ...user, password: 'supersecret' },
+  });
+  assert.equal(res.statusCode, 201, res.body);
+  return res.json() as { id: string; email: string; role: string };
+}

@@ -10,6 +10,7 @@ import { healthRoutes } from './routes/health.js';
 import { authRoutes } from './routes/auth.js';
 import { userRoutes } from './routes/users.js';
 import { deviceRoutes } from './routes/devices.js';
+import { lessonRoutes } from './routes/lessons.js';
 import { setupRealtime } from './realtime/io.js';
 
 /**
@@ -49,6 +50,7 @@ export async function buildApp() {
   await app.register(authRoutes);
   await app.register(userRoutes);
   await app.register(deviceRoutes);
+  await app.register(lessonRoutes);
 
   // Realtime layer (presence + command channel) on the same HTTP server.
   app.decorate('io', setupRealtime(app));

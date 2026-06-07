@@ -75,9 +75,21 @@ npm run test -w server   # integratietests: tenant-isolatie, auth, device-pairin
   staff, device-token voor camera's), presence per school (live online/offline in
   het dashboard) en een besturingskanaal (start/stop-opname) met school-isolatie
   - tests. ✅
+- **Fase 4** — planning: lessen (leraar + student + tijd + status), camera-selectie
+  per les, lesmateriaal (link/notitie); agenda voor leraar/admin en read-only
+  overzicht voor de student (alleen eigen lessen) + tests. ✅
 
-Volgende fases: planning (lessen), opnemen/uploaden, terugkijken,
-samengevoegde rastervideo, beveiliging/uitrol. Zie het projectplan.
+Volgende fases: opnemen/uploaden, terugkijken, samengevoegde rastervideo,
+beveiliging/uitrol. Zie het projectplan.
+
+### Lessen (fase 4)
+
+Rol-scoping: admin beheert alle lessen in de school, een leraar alleen de eigen
+lessen, een student ziet/leest alleen zijn eigen lessen.
+
+- `GET/POST /api/lessons`, `GET/PATCH/DELETE /api/lessons/:id`
+- `PUT /api/lessons/:id/devices` — camera's selecteren (alleen eigen-school-apparaten)
+- `POST/DELETE /api/lessons/:id/materials[/:materialId]` — lesmateriaal
 
 ### Realtime (fase 3)
 

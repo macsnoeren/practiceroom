@@ -2,13 +2,19 @@ import { z } from 'zod';
 import {
   CreateDeviceResultSchema,
   DeviceDtoSchema,
+  LessonDetailDtoSchema,
+  LessonDtoSchema,
+  MaterialDtoSchema,
   PairingCodeResultSchema,
   SchoolDtoSchema,
   UserDtoSchema,
+  type CreateLessonInput,
+  type CreateMaterialInput,
   type CreateUserInput,
   type LoginInput,
   type RegisterSchoolInput,
   type SchoolDto,
+  type UpdateLessonInput,
   type UserDto,
 } from '@practiceroom/shared';
 
@@ -104,4 +110,27 @@ export const api = {
   revokeDevice: (id: string) =>
     request(`/api/devices/${id}/revoke`, DeviceDtoSchema, { method: 'POST' }),
   deleteDevice: (id: string) => requestVoid(`/api/devices/${id}`, { method: 'DELETE' }),
+
+  listLessons: () => request('/api/lessons', z.array(LessonDtoSchema)),
+  getLesson: (id: string) => request(`/api/lessons/${id}`, LessonDetailDtoSchema),
+  createLesson: (input: CreateLessonInput) =>
+    request('/api/lessons', LessonDtoSchema, { method: 'POST', body: JSON.stringify(input) }),
+  updateLesson: (id: string, input: UpdateLessonInput) =>
+    request(`/api/lessons/${id}`, LessonDtoSchema, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  deleteLesson: (id: string) => requestVoid(`/api/lessons/${id}`, { method: 'DELETE' }),
+  setLessonDevices: (id: string, deviceIds: string[]) =>
+    request(`/api/lessons/${id}/devices`, LessonDetailDtoSchema, {
+      method: 'PUT',
+      body: JSON.stringify({ deviceIds }),
+    }),
+  addMaterial: (id: string, input: CreateMaterialInput) =>
+    request(`/api/lessons/${id}/materials`, MaterialDtoSchema, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  deleteMaterial: (lessonId: string, materialId: string) =>
+    requestVoid(`/api/lessons/${lessonId}/materials/${materialId}`, { method: 'DELETE' }),
 };

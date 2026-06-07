@@ -140,6 +140,85 @@ export const DeviceSelfSchema = z.object({
 export type DeviceSelf = z.infer<typeof DeviceSelfSchema>;
 
 /* -------------------------------------------------------------------------- */
+/* Lessons & material                                                         */
+/* -------------------------------------------------------------------------- */
+
+export const LESSON_STATUSES = ['planned', 'recording', 'recorded', 'ready'] as const;
+export const LessonStatusSchema = z.enum(LESSON_STATUSES);
+export type LessonStatus = (typeof LESSON_STATUSES)[number];
+
+const PersonMiniSchema = z.object({ id: z.string(), name: z.string() });
+export type PersonMini = z.infer<typeof PersonMiniSchema>;
+
+const DeviceMiniSchema = z.object({ id: z.string(), name: z.string() });
+export type DeviceMini = z.infer<typeof DeviceMiniSchema>;
+
+/** Create a lesson. A teacher implicitly teaches it; an admin must pick one. */
+export const CreateLessonSchema = z.object({
+  studentId: z.string().min(1),
+  teacherId: z.string().min(1).optional(),
+  title: z.string().trim().max(160).optional(),
+  startsAt: z.string().datetime(),
+  durationMinutes: z.number().int().min(5).max(600),
+});
+export type CreateLessonInput = z.infer<typeof CreateLessonSchema>;
+
+export const UpdateLessonSchema = z.object({
+  studentId: z.string().min(1).optional(),
+  title: z.string().trim().max(160).nullable().optional(),
+  startsAt: z.string().datetime().optional(),
+  durationMinutes: z.number().int().min(5).max(600).optional(),
+  status: LessonStatusSchema.optional(),
+});
+export type UpdateLessonInput = z.infer<typeof UpdateLessonSchema>;
+
+/** Replace the set of cameras that film a lesson. */
+export const SetLessonDevicesSchema = z.object({
+  deviceIds: z.array(z.string()),
+});
+export type SetLessonDevicesInput = z.infer<typeof SetLessonDevicesSchema>;
+
+export const CreateMaterialSchema = z
+  .object({
+    title: z.string().trim().min(1).max(160),
+    url: z.string().url().max(2000).optional(),
+    note: z.string().trim().max(2000).optional(),
+  })
+  .refine((m) => m.url !== undefined || m.note !== undefined, {
+    message: 'Voeg een link of een notitie toe',
+  });
+export type CreateMaterialInput = z.infer<typeof CreateMaterialSchema>;
+
+export const MaterialDtoSchema = z.object({
+  id: z.string(),
+  lessonId: z.string(),
+  title: z.string(),
+  url: z.string().nullable(),
+  note: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type MaterialDto = z.infer<typeof MaterialDtoSchema>;
+
+export const LessonDtoSchema = z.object({
+  id: z.string(),
+  schoolId: z.string(),
+  teacher: PersonMiniSchema,
+  student: PersonMiniSchema,
+  title: z.string().nullable(),
+  startsAt: z.string(),
+  durationMinutes: z.number(),
+  status: LessonStatusSchema,
+  createdAt: z.string(),
+});
+export type LessonDto = z.infer<typeof LessonDtoSchema>;
+
+export const LessonDetailDtoSchema = LessonDtoSchema.extend({
+  devices: z.array(DeviceMiniSchema),
+  materials: z.array(MaterialDtoSchema),
+});
+export type LessonDetailDto = z.infer<typeof LessonDetailDtoSchema>;
+
+/* -------------------------------------------------------------------------- */
 /* Realtime (Socket.IO)                                                       */
 /* -------------------------------------------------------------------------- */
 

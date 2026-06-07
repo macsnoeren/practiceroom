@@ -19,6 +19,7 @@ model School {
 
   users   User[]
   devices Device[]
+  lessons Lesson[]
 }
 
 /// A person within a school. Role is stored as a string because SQLite has no
@@ -32,8 +33,10 @@ model User {
   passwordHash String
   createdAt    DateTime @default(now())
 
-  school   School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  sessions Session[]
+  school         School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  sessions       Session[]
+  teacherLessons Lesson[]  @relation("TeacherLessons")
+  studentLessons Lesson[]  @relation("StudentLessons")
 
   @@index([schoolId])
 }
@@ -52,9 +55,61 @@ model Device {
   lastSeenAt       DateTime?
   createdAt        DateTime  @default(now())
 
-  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  school        School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  lessonDevices LessonDevice[]
 
   @@index([schoolId])
+}
+
+/// A planned lesson: a teacher and a student at a time, optionally filmed by
+/// selected devices, with attached material. Status moves planned -> recording
+/// -> recorded -> ready over later phases.
+model Lesson {
+  id              String   @id @default(cuid())
+  schoolId        String
+  teacherId       String
+  studentId       String
+  title           String?
+  startsAt        DateTime
+  durationMinutes Int
+  status          String   @default("planned")
+  createdAt       DateTime @default(now())
+
+  school    School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  teacher   User           @relation("TeacherLessons", fields: [teacherId], references: [id], onDelete: Cascade)
+  student   User           @relation("StudentLessons", fields: [studentId], references: [id], onDelete: Cascade)
+  devices   LessonDevice[]
+  materials Material[]
+
+  @@index([schoolId])
+  @@index([teacherId])
+  @@index([studentId])
+}
+
+/// Which devices film a given lesson (many-to-many join).
+model LessonDevice {
+  lessonId String
+  deviceId String
+
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@id([lessonId, deviceId])
+  @@index([deviceId])
+}
+
+/// Teaching material attached to a lesson (a link and/or a note for now).
+model Material {
+  id        String   @id @default(cuid())
+  lessonId  String
+  title     String
+  url       String?
+  note      String?
+  createdAt DateTime @default(now())
+
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@index([lessonId])
 }
 
 /// A server-side login session, referenced by an opaque httpOnly cookie token.
