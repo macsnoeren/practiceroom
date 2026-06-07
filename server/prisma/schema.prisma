@@ -17,7 +17,8 @@ model School {
   name      String
   createdAt DateTime @default(now())
 
-  users User[]
+  users   User[]
+  devices Device[]
 }
 
 /// A person within a school. Role is stored as a string because SQLite has no
@@ -33,6 +34,25 @@ model User {
 
   school   School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   sessions Session[]
+
+  @@index([schoolId])
+}
+
+/// A capture device (camera/microphone), itself a browser app. It is created
+/// by staff (unpaired), then paired by entering a short code, after which it
+/// authenticates with a long-lived bearer token (only its hash is stored).
+model Device {
+  id               String    @id @default(cuid())
+  schoolId         String
+  name             String
+  pairingCode      String?   @unique // set while waiting to pair, cleared after
+  pairingExpiresAt DateTime?
+  tokenHash        String?   @unique // sha256 of the device token, set on pairing
+  pairedAt         DateTime?
+  lastSeenAt       DateTime?
+  createdAt        DateTime  @default(now())
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
   @@index([schoolId])
 }

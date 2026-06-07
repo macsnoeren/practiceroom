@@ -81,3 +81,60 @@ export const SchoolDtoSchema = z.object({
   createdAt: z.string(),
 });
 export type SchoolDto = z.infer<typeof SchoolDtoSchema>;
+
+/* -------------------------------------------------------------------------- */
+/* Devices (cameras/microphones)                                              */
+/* -------------------------------------------------------------------------- */
+
+/** Admin/teacher registers a capture device by name; pairing happens later. */
+export const CreateDeviceSchema = z.object({
+  name: nameField,
+});
+export type CreateDeviceInput = z.infer<typeof CreateDeviceSchema>;
+
+/** The camera app pairs by entering a short code shown in the dashboard. */
+export const PairDeviceSchema = z.object({
+  pairingCode: z.string().trim().toUpperCase().min(4).max(20),
+});
+export type PairDeviceInput = z.infer<typeof PairDeviceSchema>;
+
+/** A device as shown in the management dashboard. */
+export const DeviceDtoSchema = z.object({
+  id: z.string(),
+  schoolId: z.string(),
+  name: z.string(),
+  paired: z.boolean(),
+  pairedAt: z.string().nullable(),
+  lastSeenAt: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type DeviceDto = z.infer<typeof DeviceDtoSchema>;
+
+/** Returned when a device is created or its code is regenerated. */
+export const PairingCodeResultSchema = z.object({
+  pairingCode: z.string(),
+  pairingExpiresAt: z.string(),
+});
+export type PairingCodeResult = z.infer<typeof PairingCodeResultSchema>;
+
+export const CreateDeviceResultSchema = z.object({
+  device: DeviceDtoSchema,
+  pairingCode: z.string(),
+  pairingExpiresAt: z.string(),
+});
+export type CreateDeviceResult = z.infer<typeof CreateDeviceResultSchema>;
+
+/** Camera-app facing: result of a successful pairing. Token is shown once. */
+export const DevicePairResultSchema = z.object({
+  token: z.string(),
+  device: z.object({ id: z.string(), name: z.string() }),
+});
+export type DevicePairResult = z.infer<typeof DevicePairResultSchema>;
+
+/** Camera-app facing: who am I (validates a stored token). */
+export const DeviceSelfSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  schoolId: z.string(),
+});
+export type DeviceSelf = z.infer<typeof DeviceSelfSchema>;

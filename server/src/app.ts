@@ -9,6 +9,7 @@ import { registerAuth } from './auth/plugin.js';
 import { healthRoutes } from './routes/health.js';
 import { authRoutes } from './routes/auth.js';
 import { userRoutes } from './routes/users.js';
+import { deviceRoutes } from './routes/devices.js';
 
 /**
  * Builds the Fastify app without starting it, so tests can drive it via
@@ -46,6 +47,7 @@ export async function buildApp() {
   await app.register(healthRoutes);
   await app.register(authRoutes);
   await app.register(userRoutes);
+  await app.register(deviceRoutes);
 
   return app;
 }

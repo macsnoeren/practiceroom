@@ -1,5 +1,5 @@
-import type { School, User } from '@prisma/client';
-import type { Role, SchoolDto, UserDto } from '@practiceroom/shared';
+import type { Device, School, User } from '@prisma/client';
+import type { DeviceDto, Role, SchoolDto, UserDto } from '@practiceroom/shared';
 
 /** Map a database user to the client-facing DTO. Never leaks the password hash. */
 export function toUserDto(user: User): UserDto {
@@ -18,5 +18,18 @@ export function toSchoolDto(school: School): SchoolDto {
     id: school.id,
     name: school.name,
     createdAt: school.createdAt.toISOString(),
+  };
+}
+
+/** Map a device to its dashboard DTO. Never leaks the token hash. */
+export function toDeviceDto(device: Device): DeviceDto {
+  return {
+    id: device.id,
+    schoolId: device.schoolId,
+    name: device.name,
+    paired: device.tokenHash !== null,
+    pairedAt: device.pairedAt?.toISOString() ?? null,
+    lastSeenAt: device.lastSeenAt?.toISOString() ?? null,
+    createdAt: device.createdAt.toISOString(),
   };
 }

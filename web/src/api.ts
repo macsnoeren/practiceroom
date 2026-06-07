@@ -1,5 +1,8 @@
 import { z } from 'zod';
 import {
+  CreateDeviceResultSchema,
+  DeviceDtoSchema,
+  PairingCodeResultSchema,
   SchoolDtoSchema,
   UserDtoSchema,
   type CreateUserInput,
@@ -46,6 +49,28 @@ async function request<T>(path: string, schema: z.ZodType<T>, init?: RequestInit
   return schema.parse(data);
 }
 
+/** Like `request`, but for endpoints that return no body (e.g. 204). */
+async function requestVoid(path: string, init?: RequestInit): Promise<void> {
+  const res = await fetch(path, {
+    credentials: 'same-origin',
+    headers: { 'content-type': 'application/json' },
+    ...init,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    let message = `Er ging iets mis (${res.status})`;
+    try {
+      const data: unknown = text ? JSON.parse(text) : null;
+      if (data && typeof (data as { error?: unknown }).error === 'string') {
+        message = (data as { error: string }).error;
+      }
+    } catch {
+      // non-JSON body; keep the generic message
+    }
+    throw new ApiError(res.status, message);
+  }
+}
+
 export const api = {
   me: () => request('/api/auth/me', UserDtoSchema),
   login: (input: LoginInput) =>
@@ -59,4 +84,16 @@ export const api = {
   createUser: (input: CreateUserInput) =>
     request('/api/users', UserDtoSchema, { method: 'POST', body: JSON.stringify(input) }),
   listUsers: () => request('/api/users', z.array(UserDtoSchema)),
+
+  listDevices: () => request('/api/devices', z.array(DeviceDtoSchema)),
+  createDevice: (name: string) =>
+    request('/api/devices', CreateDeviceResultSchema, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+  regeneratePairingCode: (id: string) =>
+    request(`/api/devices/${id}/pairing-code`, PairingCodeResultSchema, { method: 'POST' }),
+  revokeDevice: (id: string) =>
+    request(`/api/devices/${id}/revoke`, DeviceDtoSchema, { method: 'POST' }),
+  deleteDevice: (id: string) => requestVoid(`/api/devices/${id}`, { method: 'DELETE' }),
 };

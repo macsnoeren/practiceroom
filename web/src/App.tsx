@@ -3,6 +3,7 @@ import { APP_NAME, type UserDto } from '@practiceroom/shared';
 import { ApiError, api } from './api.js';
 import { AuthScreen } from './components/AuthScreen.js';
 import { UserManagement } from './components/UserManagement.js';
+import { DeviceManagement } from './components/DeviceManagement.js';
 
 type AuthState = { kind: 'loading' } | { kind: 'authenticated'; user: UserDto } | { kind: 'anon' };
 
@@ -58,7 +59,10 @@ export function App() {
               </p>
             </div>
           ) : (
-            <UserManagement canCreate={auth.user.role === 'admin'} />
+            <>
+              <UserManagement canCreate={auth.user.role === 'admin'} />
+              <DeviceManagement />
+            </>
           )}
         </>
       )}

@@ -128,3 +128,34 @@ td {
   font-size: 0.78rem;
   font-weight: 600;
 }
+
+.tag-ok {
+  background: #e6f6ec;
+  color: #1e7e34;
+}
+
+.codebox {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px dashed #2f6df6;
+  border-radius: 8px;
+  background: #f4f8ff;
+}
+
+.code {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 0.3rem;
+  font-family: ui-monospace, monospace;
+  margin: 0.25rem 0;
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
+.linkbtn.danger {
+  color: #c0392b;
+}

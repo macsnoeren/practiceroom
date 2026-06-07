@@ -7,6 +7,7 @@ import { createSession, deleteSession, SESSION_COOKIE } from '../auth/session.js
 import { requireAuth } from '../auth/plugin.js';
 import { conflict, unauthorized } from '../lib/errors.js';
 import { toSchoolDto, toUserDto } from '../lib/dto.js';
+import { sensitiveRateLimit } from '../lib/rate-limit.js';
 
 function setSessionCookie(reply: FastifyReply, sessionId: string, expiresAt: Date): void {
   reply.setCookie(SESSION_COOKIE, sessionId, {
@@ -18,13 +19,10 @@ function setSessionCookie(reply: FastifyReply, sessionId: string, expiresAt: Dat
   });
 }
 
-// Stricter limit on credential endpoints to slow brute-force / abuse.
-const sensitiveLimit = { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } };
-
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   // Bootstrap a school + its first admin. Open by design for a self-hosted
   // install; tighten or disable once the school exists (see Phase 8).
-  app.post('/api/auth/register-school', sensitiveLimit, async (request, reply) => {
+  app.post('/api/auth/register-school', sensitiveRateLimit, async (request, reply) => {
     const input = RegisterSchoolSchema.parse(request.body);
 
     const existing = await prisma.user.findUnique({ where: { email: input.email } });
@@ -50,7 +48,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     return reply.code(201).send({ user: toUserDto(admin), school: toSchoolDto(school) });
   });
 
-  app.post('/api/auth/login', sensitiveLimit, async (request, reply) => {
+  app.post('/api/auth/login', sensitiveRateLimit, async (request, reply) => {
     const input = LoginSchema.parse(request.body);
 
     const user = await prisma.user.findUnique({ where: { email: input.email } });
