@@ -31,11 +31,14 @@ export class ApiError extends Error {
 async function request<T>(path: string, schema: z.ZodType<T>, init?: RequestInit): Promise<T> {
   const token = getToken();
   const res = await fetch(path, {
-    headers: {
-      'content-type': 'application/json',
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-    },
     ...init,
+    headers: {
+      // Only send a JSON content-type with an actual body, otherwise Fastify
+      // rejects the (bodyless) request.
+      ...(init?.body != null ? { 'content-type': 'application/json' } : {}),
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...init?.headers,
+    },
   });
 
   const text = await res.text();

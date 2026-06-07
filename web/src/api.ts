@@ -28,12 +28,24 @@ export type RegisterResult = { user: UserDto; school: SchoolDto };
 
 const OkSchema = z.object({ ok: z.boolean() });
 
-async function request<T>(path: string, schema: z.ZodType<T>, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
+/**
+ * Only send a JSON content-type when there is actually a body. A DELETE or a
+ * bodyless POST with `content-type: application/json` makes Fastify reject the
+ * request ("Body cannot be empty...").
+ */
+function jsonInit(init?: RequestInit): RequestInit {
+  return {
     credentials: 'same-origin',
-    headers: { 'content-type': 'application/json' },
     ...init,
-  });
+    headers: {
+      ...(init?.body != null ? { 'content-type': 'application/json' } : {}),
+      ...init?.headers,
+    },
+  };
+}
+
+async function request<T>(path: string, schema: z.ZodType<T>, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, jsonInit(init));
 
   const text = await res.text();
   const data: unknown = text ? JSON.parse(text) : null;
@@ -51,11 +63,7 @@ async function request<T>(path: string, schema: z.ZodType<T>, init?: RequestInit
 
 /** Like `request`, but for endpoints that return no body (e.g. 204). */
 async function requestVoid(path: string, init?: RequestInit): Promise<void> {
-  const res = await fetch(path, {
-    credentials: 'same-origin',
-    headers: { 'content-type': 'application/json' },
-    ...init,
-  });
+  const res = await fetch(path, jsonInit(init));
   if (!res.ok) {
     const text = await res.text();
     let message = `Er ging iets mis (${res.status})`;

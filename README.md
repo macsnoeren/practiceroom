@@ -74,7 +74,7 @@ npm run test -w server   # integratietests: tenant-isolatie, auth, device-pairin
 - **Fase 3** — realtime (Socket.IO): geauthenticeerde verbindingen (cookie voor
   staff, device-token voor camera's), presence per school (live online/offline in
   het dashboard) en een besturingskanaal (start/stop-opname) met school-isolatie
-  + tests. ✅
+  - tests. ✅
 
 Volgende fases: planning (lessen), opnemen/uploaden, terugkijken,
 samengevoegde rastervideo, beveiliging/uitrol. Zie het projectplan.
