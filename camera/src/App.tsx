@@ -3,6 +3,7 @@ import { PairDeviceSchema } from '@practiceroom/shared';
 import { ApiError, cameraApi, clearToken, getToken, setToken } from './api.js';
 import { CameraPreview } from './components/CameraPreview.js';
 import { useDeviceSocket } from './useDeviceSocket.js';
+import { useRecorder } from './useRecorder.js';
 
 type State =
   | { kind: 'loading' }
@@ -53,7 +54,11 @@ function PairedView({
   device: { id: string; name: string };
   onUnpair: () => void;
 }) {
-  const { connected, recordingRequested } = useDeviceSocket();
+  const { connected, activeRecording } = useDeviceSocket();
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const recorderState = useRecorder(stream, activeRecording);
+
+  const isRecording = recorderState === 'recording';
 
   return (
     <>
@@ -62,19 +67,21 @@ function PairedView({
           Gekoppeld als <strong>{device.name}</strong>
           <div className="muted">{connected ? '● verbonden met server' : '○ niet verbonden'}</div>
         </div>
-        <button type="button" className="secondary" onClick={onUnpair}>
+        <button type="button" className="secondary" onClick={onUnpair} disabled={isRecording}>
           Ontkoppelen
         </button>
       </div>
 
-      {recordingRequested && (
+      {isRecording && <div className="card recording">● Bezig met opnemen…</div>}
+      {recorderState === 'finishing' && <div className="card">Opname afronden en uploaden…</div>}
+      {recorderState === 'error' && (
         <div className="card recording">
-          ● Opname gevraagd door de leraar. (Het daadwerkelijk opnemen volgt in een latere fase.)
+          Opnemen mislukt — controleer of camera/microfoon-toegang is gegeven.
         </div>
       )}
 
       <div className="card">
-        <CameraPreview />
+        <CameraPreview onStream={setStream} disabled={isRecording} />
       </div>
     </>
   );

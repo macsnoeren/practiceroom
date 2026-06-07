@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { io, type Socket } from 'socket.io-client';
+import { useEffect, useState } from 'react';
+import { io } from 'socket.io-client';
 import {
   DeviceOfflineSchema,
   DeviceStatusUpdateSchema,
@@ -11,17 +11,14 @@ import {
 
 /**
  * Connects to the realtime channel as staff (session cookie) and tracks which
- * devices are online plus their last reported state. Also exposes commands to
- * start/stop recording on chosen devices.
+ * devices are online plus their last reported state.
  */
 export function usePresence() {
   const [online, setOnline] = useState<Set<string>>(new Set());
   const [statuses, setStatuses] = useState<Record<string, DeviceState>>({});
-  const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
     const socket = io({ withCredentials: true });
-    socketRef.current = socket;
 
     socket.on(SOCKET_EVENTS.presenceSnapshot, (raw: unknown) => {
       const parsed = PresenceSnapshotSchema.safeParse(raw);
@@ -49,16 +46,8 @@ export function usePresence() {
 
     return () => {
       socket.close();
-      socketRef.current = null;
     };
   }, []);
 
-  function startRecording(deviceIds: string[]) {
-    socketRef.current?.emit(SOCKET_EVENTS.recordingStart, { deviceIds });
-  }
-  function stopRecording(deviceIds: string[]) {
-    socketRef.current?.emit(SOCKET_EVENTS.recordingStop, { deviceIds });
-  }
-
-  return { online, statuses, startRecording, stopRecording };
+  return { online, statuses };
 }

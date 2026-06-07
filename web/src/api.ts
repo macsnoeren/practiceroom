@@ -6,6 +6,7 @@ import {
   LessonDtoSchema,
   MaterialDtoSchema,
   PairingCodeResultSchema,
+  RecordingDtoSchema,
   SchoolDtoSchema,
   UserDtoSchema,
   type CreateLessonInput,
@@ -133,4 +134,13 @@ export const api = {
     }),
   deleteMaterial: (lessonId: string, materialId: string) =>
     requestVoid(`/api/lessons/${lessonId}/materials/${materialId}`, { method: 'DELETE' }),
+
+  startRecording: (lessonId: string) =>
+    request(`/api/lessons/${lessonId}/recording/start`, z.array(RecordingDtoSchema), {
+      method: 'POST',
+    }),
+  stopRecording: (lessonId: string) =>
+    request(`/api/lessons/${lessonId}/recording/stop`, z.object({ stopped: z.number() }), {
+      method: 'POST',
+    }),
 };

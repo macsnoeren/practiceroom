@@ -28,3 +28,7 @@ npm-debug.log*
 # misc
 *.local
 coverage/
+
+# recordings storage
+storage/
+storage-test/

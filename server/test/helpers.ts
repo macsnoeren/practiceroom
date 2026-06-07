@@ -3,6 +3,7 @@ import { execSync } from 'node:child_process';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
 import { prisma } from '../src/db.js';
+import { clearStorage } from '../src/lib/storage.js';
 
 let migrated = false;
 
@@ -21,6 +22,7 @@ export async function setupTestApp(): Promise<FastifyInstance> {
   await prisma.device.deleteMany();
   await prisma.user.deleteMany();
   await prisma.school.deleteMany();
+  await clearStorage();
 
   const app = await buildApp();
   await app.ready();

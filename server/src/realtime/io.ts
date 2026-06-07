@@ -2,7 +2,6 @@ import type { FastifyInstance } from 'fastify';
 import { Server, type Socket } from 'socket.io';
 import {
   DeviceStatusSchema,
-  RecordingCommandSchema,
   SOCKET_EVENTS,
   type OnlineDevice,
   type Role,
@@ -12,9 +11,15 @@ import { corsOrigins } from '../env.js';
 import { getSessionUser, SESSION_COOKIE } from '../auth/session.js';
 import { hashToken } from '../lib/device.js';
 
+/** Lets HTTP routes ask which devices are currently connected. */
+export interface Presence {
+  isOnline(deviceId: string): boolean;
+}
+
 declare module 'fastify' {
   interface FastifyInstance {
     io: Server;
+    presence: Presence;
   }
 }
 
@@ -33,18 +38,19 @@ function readSessionId(cookieHeader: string | undefined): string | undefined {
 }
 
 /**
- * Attaches Socket.IO to the Fastify HTTP server. Cameras authenticate with
- * their bearer token (handshake `auth.deviceToken`); staff authenticate with
- * the session cookie. Everyone joins their school room, so presence and
- * commands never cross school boundaries.
+ * Attaches Socket.IO to the Fastify HTTP server and decorates `app.io` and
+ * `app.presence`. Cameras authenticate with their bearer token; staff with the
+ * session cookie. Everyone joins their school room, so presence and commands
+ * never cross school boundaries.
  */
-export function setupRealtime(app: FastifyInstance): Server {
+export function setupRealtime(app: FastifyInstance): void {
   const io = new Server(app.server, {
     cors: { origin: corsOrigins, credentials: true },
   });
 
   // Online devices per school: schoolId -> deviceId -> { name, socket ids }.
   const online = new Map<string, Map<string, { name: string; sockets: Set<string> }>>();
+  const onlineDeviceIds = new Set<string>();
 
   function markOnline(schoolId: string, deviceId: string, name: string, socketId: string): boolean {
     let school = online.get(schoolId);
@@ -59,6 +65,7 @@ export function setupRealtime(app: FastifyInstance): Server {
     }
     const becameOnline = info.sockets.size === 0;
     info.sockets.add(socketId);
+    if (becameOnline) onlineDeviceIds.add(deviceId);
     return becameOnline;
   }
 
@@ -69,6 +76,7 @@ export function setupRealtime(app: FastifyInstance): Server {
     info.sockets.delete(socketId);
     if (info.sockets.size === 0) {
       school.delete(deviceId);
+      onlineDeviceIds.delete(deviceId);
       return true;
     }
     return false;
@@ -80,7 +88,6 @@ export function setupRealtime(app: FastifyInstance): Server {
     return [...school.entries()].map(([deviceId, info]) => ({ deviceId, name: info.name }));
   }
 
-  // Authenticate every connection at the handshake; reject anonymous ones.
   io.use(async (socket, next) => {
     try {
       const deviceToken = socket.handshake.auth?.deviceToken as unknown;
@@ -124,7 +131,8 @@ export function setupRealtime(app: FastifyInstance): Server {
     if (data.kind === 'device') {
       handleDeviceConnection(socket, data);
     } else {
-      handleStaffConnection(socket, data);
+      // Staff: send the current presence list once.
+      socket.emit(SOCKET_EVENTS.presenceSnapshot, { devices: snapshot(data.schoolId) });
     }
   });
 
@@ -144,7 +152,6 @@ export function setupRealtime(app: FastifyInstance): Server {
       });
     }
 
-    // A device reports its own state; relay it (tagged) to staff.
     socket.on(SOCKET_EVENTS.statusUpdate, (raw: unknown) => {
       const parsed = DeviceStatusSchema.safeParse(raw);
       if (!parsed.success) return;
@@ -165,37 +172,11 @@ export function setupRealtime(app: FastifyInstance): Server {
     });
   }
 
-  function handleStaffConnection(
-    socket: Socket,
-    data: Extract<SocketData, { kind: 'user' }>,
-  ): void {
-    socket.emit(SOCKET_EVENTS.presenceSnapshot, { devices: snapshot(data.schoolId) });
-
-    socket.on(SOCKET_EVENTS.recordingStart, (raw: unknown) => {
-      void relayCommand(SOCKET_EVENTS.recordingStart, raw, data.schoolId);
-    });
-    socket.on(SOCKET_EVENTS.recordingStop, (raw: unknown) => {
-      void relayCommand(SOCKET_EVENTS.recordingStop, raw, data.schoolId);
-    });
-  }
-
-  // Forward a staff command only to devices that belong to the staff's school.
-  async function relayCommand(event: string, raw: unknown, schoolId: string): Promise<void> {
-    const parsed = RecordingCommandSchema.safeParse(raw);
-    if (!parsed.success) return;
-    const devices = await prisma.device.findMany({
-      where: { id: { in: parsed.data.deviceIds }, schoolId },
-      select: { id: true },
-    });
-    for (const device of devices) {
-      io.to(deviceRoom(device.id)).emit(event);
-    }
-  }
-
   app.addHook('onClose', (_instance, done) => {
     io.close();
     done();
   });
 
-  return io;
+  app.decorate('io', io);
+  app.decorate('presence', { isOnline: (deviceId: string) => onlineDeviceIds.has(deviceId) });
 }

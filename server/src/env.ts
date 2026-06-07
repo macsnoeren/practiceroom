@@ -11,6 +11,7 @@ const EnvSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   DATABASE_URL: z.string().min(1).default('file:./dev.db'),
   CORS_ORIGIN: z.string().min(1).default('http://localhost:5173'),
+  STORAGE_DIR: z.string().min(1).default('./storage'),
 });
 
 const parsed = EnvSchema.safeParse(process.env);

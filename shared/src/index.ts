@@ -212,9 +212,33 @@ export const LessonDtoSchema = z.object({
 });
 export type LessonDto = z.infer<typeof LessonDtoSchema>;
 
+export const RECORDING_STATUSES = ['recording', 'completed', 'failed'] as const;
+export const RecordingStatusSchema = z.enum(RECORDING_STATUSES);
+export type RecordingStatus = (typeof RECORDING_STATUSES)[number];
+
+export const RecordingDtoSchema = z.object({
+  id: z.string(),
+  lessonId: z.string(),
+  deviceId: z.string(),
+  status: RecordingStatusSchema,
+  sizeBytes: z.number(),
+  startedAt: z.string(),
+  completedAt: z.string().nullable(),
+});
+export type RecordingDto = z.infer<typeof RecordingDtoSchema>;
+
+/** Device-facing: progress of an in-flight upload, used to resume. */
+export const RecordingResumeSchema = z.object({
+  id: z.string(),
+  status: RecordingStatusSchema,
+  receivedChunks: z.number(),
+});
+export type RecordingResume = z.infer<typeof RecordingResumeSchema>;
+
 export const LessonDetailDtoSchema = LessonDtoSchema.extend({
   devices: z.array(DeviceMiniSchema),
   materials: z.array(MaterialDtoSchema),
+  recordings: z.array(RecordingDtoSchema),
 });
 export type LessonDetailDto = z.infer<typeof LessonDetailDtoSchema>;
 
@@ -258,11 +282,18 @@ export type PresenceSnapshot = z.infer<typeof PresenceSnapshotSchema>;
 export const DeviceOfflineSchema = z.object({ deviceId: z.string() });
 export type DeviceOffline = z.infer<typeof DeviceOfflineSchema>;
 
-/** Staff command targeting one or more devices in their own school. */
-export const RecordingCommandSchema = z.object({
-  deviceIds: z.array(z.string()).min(1),
+/** Server -> device: start recording into the given Recording. */
+export const StartRecordingMsgSchema = z.object({
+  recordingId: z.string(),
+  lessonId: z.string(),
 });
-export type RecordingCommandInput = z.infer<typeof RecordingCommandSchema>;
+export type StartRecordingMsg = z.infer<typeof StartRecordingMsgSchema>;
+
+/** Server -> device: stop the given recording. */
+export const StopRecordingMsgSchema = z.object({
+  recordingId: z.string(),
+});
+export type StopRecordingMsg = z.infer<typeof StopRecordingMsgSchema>;
 
 export const DEVICE_STATES = ['idle', 'recording', 'error'] as const;
 export const DeviceStateSchema = z.enum(DEVICE_STATES);

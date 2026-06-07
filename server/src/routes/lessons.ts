@@ -3,6 +3,7 @@ import {
   CreateLessonSchema,
   CreateMaterialSchema,
   SetLessonDevicesSchema,
+  SOCKET_EVENTS,
   UpdateLessonSchema,
   type Role,
 } from '@practiceroom/shared';
@@ -15,6 +16,7 @@ import {
   toLessonDetailDto,
   toLessonDto,
   toMaterialDto,
+  toRecordingDto,
 } from '../lib/dto.js';
 
 interface IdParam {
@@ -218,6 +220,79 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
       const result = await prisma.material.deleteMany({ where: { id: materialId, lessonId: id } });
       if (result.count === 0) throw notFound('Materiaal niet gevonden');
       return reply.code(204).send();
+    },
+  );
+
+  // Start recording: create a Recording per ONLINE selected camera and command
+  // those cameras over the websocket to begin.
+  app.post(
+    '/api/lessons/:id/recording/start',
+    { preHandler: requireRole('admin', 'teacher') },
+    async (request, reply) => {
+      const me = requireAuth(request);
+      const { id } = request.params as IdParam;
+
+      const lesson = await prisma.lesson.findFirst({
+        where: { id, schoolId: me.schoolId },
+        include: { devices: true },
+      });
+      if (!lesson) throw notFound('Les niet gevonden');
+      if (!canManage(me, lesson)) throw forbidden();
+
+      const onlineDeviceIds = lesson.devices
+        .map((d) => d.deviceId)
+        .filter((deviceId) => app.presence.isOnline(deviceId));
+      if (onlineDeviceIds.length === 0) {
+        throw badRequest('Geen geselecteerde camera is online');
+      }
+
+      // Don't double-start a device that is already recording for this lesson.
+      const active = await prisma.recording.findMany({
+        where: { lessonId: id, status: 'recording' },
+        select: { deviceId: true },
+      });
+      const alreadyRecording = new Set(active.map((a) => a.deviceId));
+      const toStart = onlineDeviceIds.filter((deviceId) => !alreadyRecording.has(deviceId));
+
+      const recordings = await Promise.all(
+        toStart.map((deviceId) =>
+          prisma.recording.create({ data: { lessonId: id, deviceId, status: 'recording' } }),
+        ),
+      );
+      await prisma.lesson.update({ where: { id }, data: { status: 'recording' } });
+
+      for (const recording of recordings) {
+        app.io
+          .to(`device:${recording.deviceId}`)
+          .emit(SOCKET_EVENTS.recordingStart, { recordingId: recording.id, lessonId: id });
+      }
+      return reply.code(201).send(recordings.map(toRecordingDto));
+    },
+  );
+
+  // Stop recording: tell each actively recording camera to finish; the camera
+  // flushes remaining chunks and calls /complete, which flips the lesson to
+  // "recorded" once all cameras are done.
+  app.post(
+    '/api/lessons/:id/recording/stop',
+    { preHandler: requireRole('admin', 'teacher') },
+    async (request) => {
+      const me = requireAuth(request);
+      const { id } = request.params as IdParam;
+
+      const lesson = await prisma.lesson.findFirst({ where: { id, schoolId: me.schoolId } });
+      if (!lesson) throw notFound('Les niet gevonden');
+      if (!canManage(me, lesson)) throw forbidden();
+
+      const active = await prisma.recording.findMany({
+        where: { lessonId: id, status: 'recording' },
+      });
+      for (const recording of active) {
+        app.io
+          .to(`device:${recording.deviceId}`)
+          .emit(SOCKET_EVENTS.recordingStop, { recordingId: recording.id });
+      }
+      return { stopped: active.length };
     },
   );
 }

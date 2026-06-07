@@ -1,10 +1,12 @@
-import type { Device, Material, Prisma, School, User } from '@prisma/client';
+import type { Device, Material, Prisma, Recording, School, User } from '@prisma/client';
 import type {
   DeviceDto,
   LessonDetailDto,
   LessonDto,
   LessonStatus,
   MaterialDto,
+  RecordingDto,
+  RecordingStatus,
   Role,
   SchoolDto,
   UserDto,
@@ -53,12 +55,13 @@ export const lessonListInclude = {
   student: personSelect,
 } satisfies Prisma.LessonInclude;
 
-/** Prisma include for a full lesson (with cameras and material). */
+/** Prisma include for a full lesson (with cameras, material and recordings). */
 export const lessonDetailInclude = {
   teacher: personSelect,
   student: personSelect,
   devices: { include: { device: { select: { id: true, name: true } } } },
   materials: { orderBy: { createdAt: 'asc' } },
+  recordings: { orderBy: { startedAt: 'asc' } },
 } satisfies Prisma.LessonInclude;
 
 type LessonListRow = Prisma.LessonGetPayload<{ include: typeof lessonListInclude }>;
@@ -89,10 +92,23 @@ export function toLessonDto(lesson: LessonListRow): LessonDto {
   };
 }
 
+export function toRecordingDto(recording: Recording): RecordingDto {
+  return {
+    id: recording.id,
+    lessonId: recording.lessonId,
+    deviceId: recording.deviceId,
+    status: recording.status as RecordingStatus,
+    sizeBytes: recording.sizeBytes,
+    startedAt: recording.startedAt.toISOString(),
+    completedAt: recording.completedAt?.toISOString() ?? null,
+  };
+}
+
 export function toLessonDetailDto(lesson: LessonDetailRow): LessonDetailDto {
   return {
     ...toLessonDto(lesson),
     devices: lesson.devices.map((d) => ({ id: d.device.id, name: d.device.name })),
     materials: lesson.materials.map(toMaterialDto),
+    recordings: lesson.recordings.map(toRecordingDto),
   };
 }

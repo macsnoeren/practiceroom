@@ -11,6 +11,7 @@ import { authRoutes } from './routes/auth.js';
 import { userRoutes } from './routes/users.js';
 import { deviceRoutes } from './routes/devices.js';
 import { lessonRoutes } from './routes/lessons.js';
+import { recordingRoutes } from './routes/recordings.js';
 import { setupRealtime } from './realtime/io.js';
 
 /**
@@ -29,6 +30,13 @@ export async function buildApp() {
   await app.register(rateLimit, { max: 200, timeWindow: '1 minute' });
   await registerAuth(app);
 
+  // Raw binary parser for recording chunk uploads (larger than the JSON limit).
+  app.addContentTypeParser(
+    'application/octet-stream',
+    { parseAs: 'buffer', bodyLimit: 25 * 1024 * 1024 },
+    (_req, body, done) => done(null, body),
+  );
+
   // Single place to turn errors into clean JSON responses.
   app.setErrorHandler((error: FastifyError, request, reply) => {
     if (error instanceof ZodError) {
@@ -45,15 +53,18 @@ export async function buildApp() {
     return reply.code(500).send({ error: 'Interne serverfout' });
   });
 
+  // Realtime layer on the same HTTP server. Decorates app.io and app.presence,
+  // so it must run BEFORE the routes that read them (Fastify only inherits
+  // decorators that exist at the time a plugin is registered).
+  setupRealtime(app);
+
   // Routes.
   await app.register(healthRoutes);
   await app.register(authRoutes);
   await app.register(userRoutes);
   await app.register(deviceRoutes);
   await app.register(lessonRoutes);
-
-  // Realtime layer (presence + command channel) on the same HTTP server.
-  app.decorate('io', setupRealtime(app));
+  await app.register(recordingRoutes);
 
   return app;
 }

@@ -137,29 +137,4 @@ describe('realtime: presence and command routing', () => {
     const snapshot = await snapshotPromise;
     assert.ok(snapshot.devices.some((d) => d.deviceId === device.id));
   });
-
-  it('routes a command only to devices in the same school', async () => {
-    const a = await registerSchool(app, 'RT Cmd A', 'rt-cmd-a@example.com');
-    const b = await registerSchool(app, 'RT Cmd B', 'rt-cmd-b@example.com');
-    const deviceA = await createPairedDevice(a.cookie, 'A cam');
-    const deviceB = await createPairedDevice(b.cookie, 'B cam');
-
-    const staffA = connectStaff(a.cookie);
-    const camA = connectDevice(deviceA.token);
-    const camB = connectDevice(deviceB.token);
-    await Promise.all([waitConnect(staffA), waitConnect(camA), waitConnect(camB)]);
-
-    let bReceived = false;
-    camB.on(SOCKET_EVENTS.recordingStart, () => {
-      bReceived = true;
-    });
-    const aReceived = waitEvent(camA, SOCKET_EVENTS.recordingStart);
-
-    // Staff A targets both devices; only its own school's device may receive it.
-    staffA.emit(SOCKET_EVENTS.recordingStart, { deviceIds: [deviceA.id, deviceB.id] });
-
-    await aReceived; // device A got the command
-    await delay(150); // give any (wrong) delivery to B a chance
-    assert.equal(bReceived, false, "device B must not receive school A's command");
-  });
 });

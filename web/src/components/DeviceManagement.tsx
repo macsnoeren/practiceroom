@@ -15,7 +15,7 @@ export function DeviceManagement() {
   const [activeCode, setActiveCode] = useState<ActiveCode | null>(null);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
-  const { online, statuses, startRecording, stopRecording } = usePresence();
+  const { online, statuses } = usePresence();
 
   const refresh = useCallback(async () => {
     setError(null);
@@ -150,24 +150,6 @@ export function DeviceManagement() {
                     )}
                   </td>
                   <td className="actions">
-                    {isOnline && (
-                      <>
-                        <button
-                          type="button"
-                          className="linkbtn"
-                          onClick={() => startRecording([d.id])}
-                        >
-                          Start (test)
-                        </button>
-                        <button
-                          type="button"
-                          className="linkbtn"
-                          onClick={() => stopRecording([d.id])}
-                        >
-                          Stop (test)
-                        </button>
-                      </>
-                    )}
                     {!d.paired && (
                       <button type="button" className="linkbtn" onClick={() => regenerate(d.id)}>
                         Koppelcode

@@ -57,6 +57,7 @@ model Device {
 
   school        School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   lessonDevices LessonDevice[]
+  recordings    Recording[]
 
   @@index([schoolId])
 }
@@ -75,15 +76,36 @@ model Lesson {
   status          String   @default("planned")
   createdAt       DateTime @default(now())
 
-  school    School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  teacher   User           @relation("TeacherLessons", fields: [teacherId], references: [id], onDelete: Cascade)
-  student   User           @relation("StudentLessons", fields: [studentId], references: [id], onDelete: Cascade)
-  devices   LessonDevice[]
-  materials Material[]
+  school     School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  teacher    User           @relation("TeacherLessons", fields: [teacherId], references: [id], onDelete: Cascade)
+  student    User           @relation("StudentLessons", fields: [studentId], references: [id], onDelete: Cascade)
+  devices    LessonDevice[]
+  materials  Material[]
+  recordings Recording[]
 
   @@index([schoolId])
   @@index([teacherId])
   @@index([studentId])
+}
+
+/// One recorded video file per device per lesson. Chunks are appended in order
+/// during the lesson; `receivedChunks` enables resuming after an interruption.
+model Recording {
+  id             String    @id @default(cuid())
+  lessonId       String
+  deviceId       String
+  status         String    @default("recording") // recording | completed | failed
+  mimeType       String?
+  receivedChunks Int       @default(0)
+  sizeBytes      Int       @default(0)
+  startedAt      DateTime  @default(now())
+  completedAt    DateTime?
+
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([lessonId])
+  @@index([deviceId])
 }
 
 /// Which devices film a given lesson (many-to-many join).

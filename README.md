@@ -78,9 +78,25 @@ npm run test -w server   # integratietests: tenant-isolatie, auth, device-pairin
 - **Fase 4** — planning: lessen (leraar + student + tijd + status), camera-selectie
   per les, lesmateriaal (link/notitie); agenda voor leraar/admin en read-only
   overzicht voor de student (alleen eigen lessen) + tests. ✅
+- **Fase 5** — opnemen & uploaden: leraar start/stopt de opname (REST → WSS-commando
+  naar online camera's), de camera neemt op met `MediaRecorder` en uploadt
+  hervatbare chunks; de server plakt ze in volgorde tot één `.webm` per camera.
+  Status `planned → recording → recorded` + tests (chunk-upload, hervatten,
+  bestandsvalidatie, auth). ✅
 
-Volgende fases: opnemen/uploaden, terugkijken, samengevoegde rastervideo,
-beveiliging/uitrol. Zie het projectplan.
+Volgende fases: terugkijken (speler + ondertekende URL's), samengevoegde
+rastervideo, beveiliging/uitrol. Zie het projectplan.
+
+### Opnemen (fase 5)
+
+- `POST /api/lessons/:id/recording/start|stop` — (staff) start/stop; start maakt
+  per online geselecteerde camera een `Recording` en commandeert die via WSS.
+- `POST /api/recordings/:id/chunks?index=N` — (camera, `application/octet-stream`)
+  volgende chunk; idempotent, een gat geeft 409 met de verwachte index.
+- `POST /api/recordings/:id/complete` — (camera) opname afronden.
+- `GET  /api/recordings/:id` — (camera) voortgang om te hervatten.
+
+Video's worden lokaal opgeslagen onder `STORAGE_DIR` (standaard `server/storage/`).
 
 ### Lessen (fase 4)
 

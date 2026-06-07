@@ -8,7 +8,8 @@ import {
   type UserDto,
 } from '@practiceroom/shared';
 import { ApiError, api } from '../api.js';
-import { formatWhen } from '../format.js';
+import { formatBytes, formatWhen } from '../format.js';
+import { usePresence } from '../usePresence.js';
 
 export function LessonManagement({ isAdmin }: { isAdmin: boolean }) {
   const [lessons, setLessons] = useState<LessonDto[] | null>(null);
@@ -202,6 +203,7 @@ function LessonDetail({
 }) {
   const [detail, setDetail] = useState<LessonDetailDto | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { online } = usePresence();
 
   const load = useCallback(async () => {
     setError(null);
@@ -215,6 +217,26 @@ function LessonDetail({
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function startRecording() {
+    setError(null);
+    try {
+      await api.startRecording(lessonId);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Opname starten mislukt');
+    }
+  }
+
+  async function stopRecording() {
+    setError(null);
+    try {
+      await api.stopRecording(lessonId);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Opname stoppen mislukt');
+    }
+  }
 
   async function toggleDevice(deviceId: string, checked: boolean) {
     if (!detail) return;
@@ -253,8 +275,18 @@ function LessonDetail({
             onChange={(e) => toggleDevice(d.id, e.target.checked)}
           />
           {d.name}
+          {online.has(d.id) && <span className="tag tag-ok">● online</span>}
         </label>
       ))}
+
+      <h3>Opname</h3>
+      <RecordingControls
+        detail={detail}
+        onlineSelected={detail.devices.filter((d) => online.has(d.id)).length}
+        onStart={startRecording}
+        onStop={stopRecording}
+        onRefresh={load}
+      />
 
       <h3>Lesmateriaal</h3>
       <MaterialList detail={detail} onChanged={load} />
@@ -355,5 +387,54 @@ function MaterialForm({ lessonId, onAdded }: { lessonId: string; onAdded: () => 
       {error && <p className="error">{error}</p>}
       <button type="submit">Materiaal toevoegen</button>
     </form>
+  );
+}
+
+function RecordingControls({
+  detail,
+  onlineSelected,
+  onStart,
+  onStop,
+  onRefresh,
+}: {
+  detail: LessonDetailDto;
+  onlineSelected: number;
+  onStart: () => void;
+  onStop: () => void;
+  onRefresh: () => void;
+}) {
+  const isRecording = detail.status === 'recording';
+  return (
+    <div>
+      <p className="muted">
+        Status: <strong>{detail.status}</strong> · {onlineSelected} geselecteerde camera(’s) online
+      </p>
+      {isRecording ? (
+        <button type="button" onClick={onStop}>
+          Stop opname
+        </button>
+      ) : (
+        <button type="button" onClick={onStart} disabled={onlineSelected === 0}>
+          Start opname
+        </button>
+      )}
+      {detail.recordings.length > 0 && (
+        <ul className="material-list">
+          {detail.recordings.map((r) => (
+            <li key={r.id}>
+              <div>
+                Camera-opname <span className="tag">{r.status}</span>{' '}
+                {r.sizeBytes > 0 && <span className="muted">{formatBytes(r.sizeBytes)}</span>}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {isRecording && (
+        <button type="button" className="linkbtn" onClick={onRefresh}>
+          Vernieuwen
+        </button>
+      )}
+    </div>
   );
 }
