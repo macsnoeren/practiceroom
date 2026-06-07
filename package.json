@@ -9,14 +9,16 @@
   "workspaces": [
     "shared",
     "server",
-    "web"
+    "web",
+    "camera"
   ],
   "scripts": {
-    "dev": "concurrently -n server,web -c blue,green npm:dev:server npm:dev:web",
+    "dev": "concurrently -n server,web,camera -c blue,green,magenta npm:dev:server npm:dev:web npm:dev:camera",
     "dev:server": "npm run dev -w server",
     "dev:web": "npm run dev -w web",
-    "build": "npm run build -w shared && npm run build -w server && npm run build -w web",
-    "typecheck": "npm run typecheck -w shared && npm run typecheck -w server && npm run typecheck -w web",
+    "dev:camera": "npm run dev -w camera",
+    "build": "npm run build -w shared && npm run build -w server && npm run build -w web && npm run build -w camera",
+    "typecheck": "npm run typecheck -w shared && npm run typecheck -w server && npm run typecheck -w web && npm run typecheck -w camera",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

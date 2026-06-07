@@ -30,22 +30,26 @@ interface DeviceParams {
 export async function deviceRoutes(app: FastifyInstance): Promise<void> {
   /* ---- Management (staff, cookie session) ---------------------------------- */
 
-  app.post('/api/devices', { preHandler: requireRole('admin', 'teacher') }, async (request, reply) => {
-    const me = requireAuth(request);
-    const { name } = CreateDeviceSchema.parse(request.body);
+  app.post(
+    '/api/devices',
+    { preHandler: requireRole('admin', 'teacher') },
+    async (request, reply) => {
+      const me = requireAuth(request);
+      const { name } = CreateDeviceSchema.parse(request.body);
 
-    const pairingCode = await generateUniquePairingCode();
-    const pairingExpiresAt = new Date(Date.now() + PAIRING_TTL_MS);
-    const device = await prisma.device.create({
-      data: { schoolId: me.schoolId, name, pairingCode, pairingExpiresAt },
-    });
+      const pairingCode = await generateUniquePairingCode();
+      const pairingExpiresAt = new Date(Date.now() + PAIRING_TTL_MS);
+      const device = await prisma.device.create({
+        data: { schoolId: me.schoolId, name, pairingCode, pairingExpiresAt },
+      });
 
-    return reply.code(201).send({
-      device: toDeviceDto(device),
-      pairingCode,
-      pairingExpiresAt: pairingExpiresAt.toISOString(),
-    });
-  });
+      return reply.code(201).send({
+        device: toDeviceDto(device),
+        pairingCode,
+        pairingExpiresAt: pairingExpiresAt.toISOString(),
+      });
+    },
+  );
 
   app.get('/api/devices', { preHandler: requireRole('admin', 'teacher') }, async (request) => {
     const me = requireAuth(request);

@@ -1,46 +1,19 @@
-import { execSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import type { FastifyInstance } from 'fastify';
-import { buildApp } from '../src/app.js';
 import { prisma } from '../src/db.js';
+import { registerSchool, sessionCookie, setupTestApp } from './helpers.js';
 
 let app: FastifyInstance;
 
 before(async () => {
-  // Ensure the dedicated test database has the current schema (idempotent,
-  // non-destructive). DATABASE_URL points at test.db via .env.test.
-  execSync('npx prisma migrate deploy', { env: process.env, stdio: 'ignore' });
-  // Start from a clean slate (cascade would suffice, but be explicit).
-  await prisma.session.deleteMany();
-  await prisma.user.deleteMany();
-  await prisma.school.deleteMany();
-  app = await buildApp();
-  await app.ready();
+  app = await setupTestApp();
 });
 
 after(async () => {
   if (app) await app.close();
   await prisma.$disconnect();
 });
-
-/** Extract the session cookie value from a Set-Cookie response header. */
-function sessionCookie(setCookie: string | string[] | undefined): string {
-  const header = Array.isArray(setCookie) ? setCookie.join(';') : (setCookie ?? '');
-  const match = /pr_session=([^;]+)/.exec(header);
-  assert.ok(match, 'expected a pr_session cookie to be set');
-  return `pr_session=${match[1]}`;
-}
-
-async function registerSchool(schoolName: string, email: string) {
-  const res = await app.inject({
-    method: 'POST',
-    url: '/api/auth/register-school',
-    payload: { schoolName, adminName: 'Admin', email, password: 'supersecret' },
-  });
-  assert.equal(res.statusCode, 201, res.body);
-  return { cookie: sessionCookie(res.headers['set-cookie']), body: res.json() };
-}
 
 async function createUser(
   cookie: string,
@@ -56,7 +29,7 @@ async function createUser(
 
 describe('auth & tenant isolation', () => {
   it('registers a school with its admin and returns the admin user', async () => {
-    const { cookie, body } = await registerSchool('Conservatorium A', 'admin-a@example.com');
+    const { cookie, body } = await registerSchool(app, 'Conservatorium A', 'admin-a@example.com');
     assert.equal(body.user.role, 'admin');
     assert.equal(body.user.email, 'admin-a@example.com');
 
@@ -81,7 +54,7 @@ describe('auth & tenant isolation', () => {
 
   it('lets an admin create teachers/students and lists only its own school', async () => {
     // School A already exists from the first test (admin-a). Add staff.
-    const a = await registerSchool('School A2', 'admin-a2@example.com');
+    const a = await registerSchool(app, 'School A2', 'admin-a2@example.com');
     await createUser(a.cookie, {
       name: 'Teacher A',
       email: 'teacher-a@example.com',
@@ -94,7 +67,7 @@ describe('auth & tenant isolation', () => {
     });
 
     // A separate school B with its own student.
-    const b = await registerSchool('School B', 'admin-b@example.com');
+    const b = await registerSchool(app, 'School B', 'admin-b@example.com');
     await createUser(b.cookie, {
       name: 'Student B',
       email: 'student-b@example.com',

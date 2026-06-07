@@ -10,8 +10,8 @@ camera's/microfoons, studenten kijken de les later terug om effectiever te oefen
 - **Monorepo** met npm-workspaces:
   - `shared/` — gedeelde types en zod-schema's (één bron van waarheid voor de client⇄server-contracten).
   - `server/` — Fastify-API + (later) Socket.IO + Prisma (SQLite).
-  - `web/` — React + Vite app voor admin/leraar/student.
-  - `camera/` — (volgt in fase 2) React + Vite camera-app.
+  - `web/` — React + Vite app voor admin/leraar/student (poort 5173).
+  - `camera/` — React + Vite camera-app: koppelt met een code en toont camera/microfoon (poort 5174).
 
 ## Vereisten
 
@@ -48,14 +48,29 @@ query is gefilterd op de school van de ingelogde gebruiker.
 - `POST /api/users` — (admin) leraar/student aanmaken in eigen school
 - `GET  /api/users` — (admin/leraar) gebruikers van eigen school
 
+### Apparaten (fase 2)
+
+Beheer via gebruikerssessie; de camera-app authenticeert met een eigen
+bearer-token (alleen de hash wordt opgeslagen).
+
+- `POST /api/devices` — (admin/leraar) apparaat registreren → koppelcode
+- `GET  /api/devices` — apparaten van eigen school
+- `POST /api/devices/:id/pairing-code` — nieuwe koppelcode
+- `POST /api/devices/:id/revoke` — koppeling intrekken
+- `DELETE /api/devices/:id` — apparaat verwijderen
+- `POST /api/devices/pair` — (camera-app) koppelen met code → token
+- `GET  /api/devices/me` — (camera-app, bearer) eigen apparaatinfo
+
 ```bash
-npm run test -w server   # integratietests, incl. tenant-isolatie
+npm run test -w server   # integratietests: tenant-isolatie, auth, device-pairing
 ```
 
 ## Status
 
 - **Fase 0** — fundament (monorepo, TS strict, lint/format, Fastify, Vite, Prisma). ✅
 - **Fase 1** — school, login, rollen (admin/leraar/student), tenant-isolatie + tests. ✅
+- **Fase 2** — camera-apparaten: registreren + koppelcode, camera-app met
+  getUserMedia-preview, device-token-auth + tests. ✅
 
-Volgende fases: camera-apparaten, websockets, planning, opnemen/uploaden,
+Volgende fases: websockets (presence/besturing), planning, opnemen/uploaden,
 terugkijken, samengevoegde rastervideo, beveiliging/uitrol. Zie het projectplan.

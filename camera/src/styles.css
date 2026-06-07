@@ -1,0 +1,107 @@
+:root {
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  color: #1a1a1a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #f5f6f8;
+}
+
+.container {
+  max-width: 720px;
+  margin: 2.5rem auto;
+  padding: 0 1rem;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #e3e5e9;
+  border-radius: 10px;
+  padding: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+
+h1 {
+  margin-top: 0;
+}
+
+h2 {
+  margin-top: 0;
+  font-size: 1.15rem;
+}
+
+label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin: 0.75rem 0 0.25rem;
+}
+
+input,
+select {
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #c9ccd2;
+  border-radius: 7px;
+  font-size: 1rem;
+}
+
+input#code {
+  font-size: 1.5rem;
+  letter-spacing: 0.3rem;
+  text-transform: uppercase;
+}
+
+button {
+  margin-top: 1rem;
+  padding: 0.55rem 1rem;
+  border: 0;
+  border-radius: 7px;
+  background: #2f6df6;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: #eaecef;
+  color: #1a1a1a;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.error {
+  color: #c0392b;
+  margin-top: 0.5rem;
+}
+
+.muted {
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+.row {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.preview {
+  width: 100%;
+  border-radius: 8px;
+  background: #000;
+  aspect-ratio: 16 / 9;
+}
