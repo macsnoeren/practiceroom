@@ -558,3 +558,179 @@ th {
   background: #000;
   aspect-ratio: 16 / 9;
 }
+
+/* ------------------------------------------------------------- calendar */
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.toolbar button,
+.viewtoggle button {
+  margin-top: 0;
+}
+
+.toolbar-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.toolbar-nav .period {
+  min-width: 12rem;
+  text-align: center;
+  text-transform: capitalize;
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.viewtoggle {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.cal-week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.cal-col {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.4rem;
+  min-height: 7rem;
+  background: var(--surface);
+}
+
+.cal-col-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 0.35rem;
+}
+
+.cal-col-head button {
+  margin-top: 0;
+}
+
+.cal-month {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.cal-weekday {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.cal-cell {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.3rem;
+  min-height: 5.5rem;
+  background: var(--surface);
+}
+
+.cal-cell.faded {
+  background: var(--surface-2);
+  opacity: 0.6;
+}
+
+.cal-daynum {
+  margin: 0 0 0.25rem;
+  padding: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.cal-daynum:hover {
+  color: var(--primary);
+  background: none;
+}
+
+.holiday {
+  background: var(--warning-soft);
+}
+
+.holiday-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.lesson-chip {
+  display: block;
+  background: var(--primary-soft);
+  color: var(--text);
+  text-decoration: none;
+  border-radius: 6px;
+  padding: 0.25rem 0.4rem;
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
+  line-height: 1.25;
+}
+
+.lesson-chip:hover {
+  background: #e2e6ff;
+}
+
+.lesson-chip.small {
+  font-size: 0.72rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ------------------------------------------------------------- modal */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.5);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  z-index: 50;
+}
+
+.modal {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  width: 100%;
+  max-width: 460px;
+  max-height: 90vh;
+  overflow: auto;
+  padding: 1.5rem;
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.modal-head h2 {
+  margin: 0;
+}

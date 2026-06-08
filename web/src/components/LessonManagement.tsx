@@ -1,16 +1,36 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { CreateLessonSchema, type LessonDto, type UserDto } from '@practiceroom/shared';
+import {
+  CreateLessonSchema,
+  type LessonDto,
+  type HolidayDto,
+  type UserDto,
+} from '@practiceroom/shared';
 import { ApiError, api } from '../api.js';
-import { formatWhen } from '../format.js';
+import { addDays, addMonths, isHolidayDay, monthGrid, weekDays, ymd } from '../calendar.js';
+import { Modal } from './Modal.js';
+
+type View = 'week' | 'month';
+
+const DAY_NAMES = ['ma', 'di', 'wo', 'do', 'vr', 'za', 'zo'];
+
+function timeOf(iso: string): string {
+  return new Date(iso).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
+}
 
 export function LessonManagement({ isAdmin }: { isAdmin: boolean }) {
   const [lessons, setLessons] = useState<LessonDto[] | null>(null);
+  const [holidays, setHolidays] = useState<HolidayDto[]>([]);
   const [students, setStudents] = useState<UserDto[]>([]);
   const [teachers, setTeachers] = useState<UserDto[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const refreshLessons = useCallback(async () => {
+  const [view, setView] = useState<View>('week');
+  const [anchor, setAnchor] = useState<Date>(() => new Date());
+  const [studentId, setStudentId] = useState('');
+  const [planDate, setPlanDate] = useState<string | null>(null); // non-null = modal open
+
+  const refresh = useCallback(async () => {
     setError(null);
     try {
       setLessons(await api.listLessons());
@@ -20,44 +40,181 @@ export function LessonManagement({ isAdmin }: { isAdmin: boolean }) {
   }, []);
 
   useEffect(() => {
-    void refreshLessons();
+    void refresh();
+    void api
+      .listHolidays()
+      .then(setHolidays)
+      .catch(() => undefined);
     void api.listUsers().then((users) => {
       setStudents(users.filter((u) => u.role === 'student'));
-      // Admins teach too, so they can be chosen as a lesson's teacher.
       setTeachers(users.filter((u) => u.role === 'teacher' || u.role === 'admin'));
     });
-  }, [refreshLessons]);
+  }, [refresh]);
+
+  // Group the (optionally student-filtered) lessons by local day.
+  const byDay = useMemo(() => {
+    const map = new Map<string, LessonDto[]>();
+    for (const l of lessons ?? []) {
+      if (studentId && l.student.id !== studentId) continue;
+      const key = ymd(new Date(l.startsAt));
+      const arr = map.get(key);
+      if (arr) arr.push(l);
+      else map.set(key, [l]);
+    }
+    return map;
+  }, [lessons, studentId]);
+
+  const days = view === 'week' ? weekDays(anchor) : monthGrid(anchor);
+
+  function goPrev() {
+    setAnchor(view === 'week' ? addDays(anchor, -7) : addMonths(anchor, -1));
+  }
+  function goNext() {
+    setAnchor(view === 'week' ? addDays(anchor, 7) : addMonths(anchor, 1));
+  }
+
+  const periodLabel =
+    view === 'week'
+      ? `${days[0]!.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })} – ${days[6]!.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' })}`
+      : anchor.toLocaleDateString('nl-NL', { month: 'long', year: 'numeric' });
 
   return (
-    <div className="card">
-      <h2>Lessen plannen</h2>
-      {error && <p className="error">{error}</p>}
+    <div>
+      <div className="card">
+        <div className="toolbar">
+          <button type="button" onClick={() => setPlanDate('')}>
+            + Les inplannen
+          </button>
 
-      <LessonForm
-        isAdmin={isAdmin}
-        students={students}
-        teachers={teachers}
-        onCreated={refreshLessons}
-      />
+          <div className="toolbar-nav">
+            <button type="button" className="secondary" onClick={goPrev} aria-label="Vorige">
+              ◀
+            </button>
+            <strong className="period">{periodLabel}</strong>
+            <button type="button" className="secondary" onClick={goNext} aria-label="Volgende">
+              ▶
+            </button>
+            <button type="button" className="linkbtn" onClick={() => setAnchor(new Date())}>
+              Vandaag
+            </button>
+          </div>
 
-      {!lessons && <p className="muted">Laden…</p>}
-      {lessons && lessons.length === 0 && <p className="muted">Nog geen lessen gepland.</p>}
-      {lessons && lessons.length > 0 && (
-        <ul className="lesson-list">
-          {lessons.map((l) => (
-            <li key={l.id}>
-              <Link to={`/lessons/${l.id}`} className="lesson-item">
-                <span>
-                  <strong>{l.title || 'Les'}</strong> — {l.student.name}
-                  <div className="muted">
-                    {formatWhen(l.startsAt)} · {l.durationMinutes} min · leraar {l.teacher.name}
+          <div className="toolbar-right">
+            <div className="viewtoggle">
+              <button
+                type="button"
+                className={view === 'week' ? '' : 'secondary'}
+                onClick={() => setView('week')}
+              >
+                Week
+              </button>
+              <button
+                type="button"
+                className={view === 'month' ? '' : 'secondary'}
+                onClick={() => setView('month')}
+              >
+                Maand
+              </button>
+            </div>
+            <select
+              value={studentId}
+              onChange={(e) => setStudentId(e.target.value)}
+              aria-label="Filter op student"
+            >
+              <option value="">Alle studenten</option>
+              {students.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {error && <p className="error">{error}</p>}
+
+        {view === 'week' ? (
+          <div className="cal-week">
+            {days.map((day) => {
+              const key = ymd(day);
+              const holiday = isHolidayDay(key, holidays);
+              return (
+                <div key={key} className={`cal-col${holiday ? ' holiday' : ''}`}>
+                  <div className="cal-col-head">
+                    <span>
+                      {DAY_NAMES[(day.getDay() + 6) % 7]} {day.getDate()}
+                    </span>
+                    {!holiday && (
+                      <button
+                        type="button"
+                        className="linkbtn"
+                        onClick={() => setPlanDate(`${key}T09:00`)}
+                        aria-label="Plan op deze dag"
+                      >
+                        +
+                      </button>
+                    )}
                   </div>
-                </span>
-                <span className="tag">{l.status}</span>
-              </Link>
-            </li>
-          ))}
-        </ul>
+                  {holiday && <div className="muted holiday-label">Vakantie</div>}
+                  {(byDay.get(key) ?? []).map((l) => (
+                    <Link key={l.id} to={`/lessons/${l.id}`} className="lesson-chip">
+                      <strong>{timeOf(l.startsAt)}</strong> {l.title || 'Les'}
+                      <div className="muted">{l.student.name}</div>
+                    </Link>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="cal-month">
+            {DAY_NAMES.map((n) => (
+              <div key={n} className="cal-weekday">
+                {n}
+              </div>
+            ))}
+            {days.map((day) => {
+              const key = ymd(day);
+              const holiday = isHolidayDay(key, holidays);
+              const inMonth = day.getMonth() === anchor.getMonth();
+              return (
+                <div
+                  key={key}
+                  className={`cal-cell${inMonth ? '' : ' faded'}${holiday ? ' holiday' : ''}`}
+                >
+                  <button
+                    type="button"
+                    className="cal-daynum"
+                    onClick={() => setPlanDate(`${key}T09:00`)}
+                    title="Plan op deze dag"
+                  >
+                    {day.getDate()}
+                  </button>
+                  {(byDay.get(key) ?? []).map((l) => (
+                    <Link key={l.id} to={`/lessons/${l.id}`} className="lesson-chip small">
+                      {timeOf(l.startsAt)} {l.student.name}
+                    </Link>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {planDate !== null && (
+        <Modal title="Les inplannen" onClose={() => setPlanDate(null)}>
+          <LessonForm
+            isAdmin={isAdmin}
+            students={students}
+            teachers={teachers}
+            initialDate={planDate || undefined}
+            onCreated={() => {
+              setPlanDate(null);
+              void refresh();
+            }}
+          />
+        </Modal>
       )}
     </div>
   );
@@ -67,17 +224,19 @@ function LessonForm({
   isAdmin,
   students,
   teachers,
+  initialDate,
   onCreated,
 }: {
   isAdmin: boolean;
   students: UserDto[];
   teachers: UserDto[];
+  initialDate?: string;
   onCreated: () => void;
 }) {
   const [studentId, setStudentId] = useState('');
   const [teacherId, setTeacherId] = useState('');
   const [title, setTitle] = useState('');
-  const [startsAt, setStartsAt] = useState('');
+  const [startsAt, setStartsAt] = useState(initialDate ?? '');
   const [duration, setDuration] = useState(30);
   const [repeat, setRepeat] = useState(false);
   const [weeks, setWeeks] = useState(12);
@@ -107,8 +266,6 @@ function LessonForm({
     setBusy(true);
     try {
       await api.createLesson(parsed.data);
-      setTitle('');
-      setStartsAt('');
       onCreated();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Plannen mislukt');
@@ -118,7 +275,7 @@ function LessonForm({
   }
 
   return (
-    <form onSubmit={submit} className="lesson-form">
+    <form onSubmit={submit}>
       <label htmlFor="lf-student">Student</label>
       <select id="lf-student" value={studentId} onChange={(e) => setStudentId(e.target.value)}>
         <option value="">— kies een student —</option>
