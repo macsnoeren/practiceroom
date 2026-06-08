@@ -98,6 +98,62 @@ describe('holidays', () => {
   });
 });
 
+function planLesson(cookie: string, studentId: string, startsAt: string) {
+  return app.inject({
+    method: 'POST',
+    url: '/api/lessons',
+    headers: { cookie },
+    payload: { studentId, startsAt, durationMinutes: 30 },
+  });
+}
+
+function countLessons(cookie: string) {
+  return app
+    .inject({ method: 'GET', url: '/api/lessons', headers: { cookie } })
+    .then((res) => (res.json() as unknown[]).length);
+}
+
+describe('holidays cancel lessons in the schedule', () => {
+  it('hides a lesson when a covering holiday is added and restores it on removal', async () => {
+    const a = await makeSchool('Cancel A', 'ca');
+    const planned = await planLesson(a.teacher.cookie, a.student.id, '2026-12-25T10:00:00.000Z');
+    assert.equal(planned.statusCode, 201);
+
+    assert.equal(await countLessons(a.teacher.cookie), 1);
+    assert.equal(await countLessons(a.student.cookie), 1);
+
+    const holiday = await createHoliday(a.adminCookie, {
+      name: 'Kerst',
+      startsOn: '2026-12-24',
+      endsOn: '2026-12-26',
+    });
+    const holidayId = holiday.json().id as string;
+
+    // The lesson falls in the holiday -> it disappears from the schedule.
+    assert.equal(await countLessons(a.teacher.cookie), 0);
+    assert.equal(await countLessons(a.student.cookie), 0);
+
+    // Removing the holiday brings it back (non-destructive).
+    await app.inject({
+      method: 'DELETE',
+      url: `/api/holidays/${holidayId}`,
+      headers: { cookie: a.adminCookie },
+    });
+    assert.equal(await countLessons(a.student.cookie), 1);
+  });
+
+  it('rejects planning a single lesson on a holiday date', async () => {
+    const a = await makeSchool('Cancel B', 'cb');
+    await createHoliday(a.adminCookie, {
+      name: 'Voorjaar',
+      startsOn: '2027-02-22',
+      endsOn: '2027-02-26',
+    });
+    const res = await planLesson(a.teacher.cookie, a.student.id, '2027-02-24T10:00:00.000Z');
+    assert.equal(res.statusCode, 400);
+  });
+});
+
 describe('weekly recurring lessons', () => {
   function planSeries(cookie: string, studentId: string, repeatWeeks: number) {
     return app.inject({

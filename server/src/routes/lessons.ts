@@ -46,7 +46,9 @@ async function assertUserInSchool(id: string, schoolId: string, role: Role): Pro
 }
 
 export async function lessonRoutes(app: FastifyInstance): Promise<void> {
-  // List lessons relevant to the caller (own school; scoped by role).
+  // List lessons relevant to the caller (own school; scoped by role). Lessons
+  // that fall within a school holiday are dropped from the schedule (they
+  // "lapse"); removing the holiday brings them back.
   app.get('/api/lessons', async (request) => {
     const me = requireAuth(request);
     const where = {
@@ -54,12 +56,14 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
       ...(me.role === 'teacher' ? { teacherId: me.id } : {}),
       ...(me.role === 'student' ? { studentId: me.id } : {}),
     };
-    const lessons = await prisma.lesson.findMany({
-      where,
-      include: lessonListInclude,
-      orderBy: { startsAt: 'asc' },
-    });
-    return lessons.map(toLessonDto);
+    const [lessons, holidays] = await Promise.all([
+      prisma.lesson.findMany({ where, include: lessonListInclude, orderBy: { startsAt: 'asc' } }),
+      prisma.holiday.findMany({
+        where: { schoolId: me.schoolId },
+        select: { startsOn: true, endsOn: true },
+      }),
+    ]);
+    return lessons.filter((l) => !isWithinHolidays(l.startsAt, holidays)).map(toLessonDto);
   });
 
   app.get('/api/lessons/:id', async (request) => {
@@ -91,14 +95,16 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
       // week that falls in a school holiday.
       const repeatWeeks = input.repeatWeeks ?? 1;
       const base = new Date(input.startsAt);
+      const holidays = await prisma.holiday.findMany({
+        where: { schoolId: me.schoolId },
+        select: { startsOn: true, endsOn: true },
+      });
+
       let dates: Date[];
       if (repeatWeeks <= 1) {
+        if (isWithinHolidays(base, holidays)) throw badRequest('Deze datum valt in een vakantie');
         dates = [base];
       } else {
-        const holidays = await prisma.holiday.findMany({
-          where: { schoolId: me.schoolId },
-          select: { startsOn: true, endsOn: true },
-        });
         dates = [];
         for (let week = 0; week < repeatWeeks; week++) {
           const occurrence = new Date(base.getTime() + week * 7 * 24 * 60 * 60 * 1000);
