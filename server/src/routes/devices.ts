@@ -12,6 +12,7 @@ import {
   hashToken,
 } from '../lib/device.js';
 import { sensitiveRateLimit } from '../lib/rate-limit.js';
+import { audit } from '../lib/audit.js';
 
 /** Generate a pairing code that is not currently in use. */
 async function generateUniquePairingCode(): Promise<string> {
@@ -94,6 +95,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
         where: { id },
         data: { tokenHash: null, pairedAt: null, pairingCode: null, pairingExpiresAt: null },
       });
+      audit(request, 'device.revoke', { deviceId: id });
       return toDeviceDto(updated);
     },
   );
@@ -133,6 +135,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
       },
     });
 
+    audit(request, 'device.pair', { deviceId: device.id, schoolId: device.schoolId });
     return reply.code(200).send({ token, device: { id: device.id, name: device.name } });
   });
 

@@ -1,19 +1,20 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { LoginSchema, RegisterSchoolSchema } from '@practiceroom/shared';
 import { prisma } from '../db.js';
-import { env } from '../env.js';
+import { cookieSecure } from '../env.js';
 import { hashPassword, verifyPassword } from '../auth/password.js';
 import { createSession, deleteSession, SESSION_COOKIE } from '../auth/session.js';
 import { requireAuth } from '../auth/plugin.js';
 import { conflict, unauthorized } from '../lib/errors.js';
 import { toSchoolDto, toUserDto } from '../lib/dto.js';
 import { sensitiveRateLimit } from '../lib/rate-limit.js';
+import { audit } from '../lib/audit.js';
 
 function setSessionCookie(reply: FastifyReply, sessionId: string, expiresAt: Date): void {
   reply.setCookie(SESSION_COOKIE, sessionId, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: env.NODE_ENV === 'production',
+    secure: cookieSecure,
     path: '/',
     expires: expiresAt,
   });
@@ -45,6 +46,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
     const session = await createSession(admin.id);
     setSessionCookie(reply, session.id, session.expiresAt);
+    audit(request, 'school.register', { schoolId: school.id, userId: admin.id });
     return reply.code(201).send({ user: toUserDto(admin), school: toSchoolDto(school) });
   });
 
@@ -55,14 +57,19 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     if (!user) {
       // Spend similar time as a real verify to reduce user enumeration.
       await hashPassword(input.password);
+      audit(request, 'auth.login_failed', { email: input.email });
       throw unauthorized('Onjuiste inloggegevens');
     }
 
     const ok = await verifyPassword(user.passwordHash, input.password);
-    if (!ok) throw unauthorized('Onjuiste inloggegevens');
+    if (!ok) {
+      audit(request, 'auth.login_failed', { email: input.email });
+      throw unauthorized('Onjuiste inloggegevens');
+    }
 
     const session = await createSession(user.id);
     setSessionCookie(reply, session.id, session.expiresAt);
+    audit(request, 'auth.login', { userId: user.id });
     return toUserDto(user);
   });
 

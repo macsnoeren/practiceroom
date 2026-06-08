@@ -5,6 +5,7 @@ import { hashPassword } from '../auth/password.js';
 import { requireAuth, requireRole } from '../auth/plugin.js';
 import { conflict } from '../lib/errors.js';
 import { toUserDto } from '../lib/dto.js';
+import { audit } from '../lib/audit.js';
 
 export async function userRoutes(app: FastifyInstance): Promise<void> {
   // Admin creates a teacher or student within their OWN school.
@@ -26,6 +27,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       },
     });
 
+    audit(request, 'user.create', { userId: user.id, role: user.role });
     return reply.code(201).send(toUserDto(user));
   });
 

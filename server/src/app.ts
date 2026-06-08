@@ -1,6 +1,7 @@
 import Fastify, { type FastifyError } from 'fastify';
 import cors from '@fastify/cors';
 import cookie from '@fastify/cookie';
+import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import { ZodError } from 'zod';
 import { corsOrigins, env } from './env.js';
@@ -23,6 +24,14 @@ export async function buildApp() {
   const app = Fastify({
     logger:
       env.NODE_ENV === 'test' ? false : { level: env.NODE_ENV === 'production' ? 'info' : 'debug' },
+  });
+
+  // Security headers. CSP/COEP are disabled because this is a JSON+media API
+  // (the SPAs are served separately and set their own policy); enabling them
+  // here would only risk blocking video playback.
+  await app.register(helmet, {
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
   });
 
   // Plugins. Order matters: cookies must be parsed before auth reads them.

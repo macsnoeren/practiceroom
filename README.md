@@ -91,8 +91,36 @@ npm run test -w server   # integratietests: tenant-isolatie, auth, device-pairin
   starten stopt de vorige) → segmenten. Een aparte **worker** (`npm run worker`)
   voegt de segmenten met ffmpeg in de tijd samen tot **één video per les**. + tests
   (incl. echte ffmpeg-concat). ✅
+- **Fase 8** — beveiliging & uitrol: security headers (helmet), productie-secret-
+  bewaking, HTTPS-only cookies, audit-logging, en een **Docker-uitrol**
+  (API + worker + twee statische SPA's met SPA-fallback). ✅
 
-Volgende fases: beveiliging/uitrol. Zie het projectplan.
+## Productie (Docker)
+
+> Lokaal ontwikkelen blijft `npm run dev`. De Docker-stack is voor productie/uitrol.
+
+```bash
+cp .env.example .env        # zet een sterke SIGNING_SECRET en de juiste CORS_ORIGIN
+docker compose up -d --build
+```
+
+- Dashboard op `http://<host>:8080`, camera-app op `http://<host>:8081`.
+- Services: `server` (API), `worker` (ffmpeg-samenvoegen), `web` + `camera`
+  (nginx, serveren de SPA's en proxyen `/api` + `/socket.io` naar de server).
+- Data (SQLite + video's) staat in het `appdata`-volume; migraties draaien bij
+  het opstarten van de server.
+- **Draai dit achter HTTPS** (cookies zijn standaard `Secure`). Voor een snelle
+  lokale HTTP-test: `COOKIE_SECURE=false` in `.env`.
+
+## Beveiliging
+
+- HTTPS/WSS in productie; httpOnly + `SameSite=lax` (+ `Secure`) sessie-cookies.
+- Wachtwoorden met **argon2id**; sessies serverside; device-tokens alleen als hash.
+- **Tenant-isolatie**: elke query gefilterd op de school van de gebruiker.
+- Security headers via **helmet**; rate-limiting (strenger op login/koppelen).
+- Ondertekende, vervallende video-URL's + per-verzoek deelnemer-check.
+- De server **weigert te starten** in productie met de standaard `SIGNING_SECRET`.
+- Audit-logregels (veld `audit`) voor login, account- en device-wijzigingen.
 
 ### Eén lesvideo (fase 7)
 
