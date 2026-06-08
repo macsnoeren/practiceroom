@@ -2,19 +2,31 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { CreateDeviceSchema, type DeviceDto } from '@practiceroom/shared';
 import { ApiError, api } from '../api.js';
 import { usePresence } from '../usePresence.js';
+import { Modal } from './Modal.js';
 
-interface ActiveCode {
-  deviceId: string;
+interface PairingCode {
   code: string;
   expiresAt: string;
+}
+
+function CodeBox({ code, expiresAt }: PairingCode) {
+  return (
+    <div className="codebox">
+      <div className="muted">Koppelcode (open de camera-app en voer deze in):</div>
+      <div className="code">{code}</div>
+      <div className="muted">
+        Geldig tot {new Date(expiresAt).toLocaleTimeString()}. Camera-app:{' '}
+        <code>http://localhost:5174</code>
+      </div>
+    </div>
+  );
 }
 
 export function DeviceManagement() {
   const [devices, setDevices] = useState<DeviceDto[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [activeCode, setActiveCode] = useState<ActiveCode | null>(null);
-  const [name, setName] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [activeCode, setActiveCode] = useState<(PairingCode & { deviceId: string }) | null>(null);
+  const [open, setOpen] = useState(false);
   const { online, statuses } = usePresence();
 
   const refresh = useCallback(async () => {
@@ -29,31 +41,6 @@ export function DeviceManagement() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
-
-  async function addDevice(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    const parsed = CreateDeviceSchema.safeParse({ name });
-    if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? 'Controleer de naam');
-      return;
-    }
-    setBusy(true);
-    try {
-      const result = await api.createDevice(parsed.data.name);
-      setActiveCode({
-        deviceId: result.device.id,
-        code: result.pairingCode,
-        expiresAt: result.pairingExpiresAt,
-      });
-      setName('');
-      await refresh();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Toevoegen mislukt');
-    } finally {
-      setBusy(false);
-    }
-  }
 
   async function regenerate(id: string) {
     setError(null);
@@ -90,31 +77,23 @@ export function DeviceManagement() {
 
   return (
     <div className="card">
-      <h2>Camera's & microfoons</h2>
-      <p className="muted">
-        Registreer een apparaat, open daarna de camera-app en voer de koppelcode in.
-      </p>
-
-      <form onSubmit={addDevice}>
-        <label htmlFor="dev-name">Naam apparaat (bijv. "Lokaal 1 — voorkant")</label>
-        <input id="dev-name" value={name} onChange={(e) => setName(e.target.value)} />
-        <button type="submit" disabled={busy}>
-          {busy ? 'Bezig…' : 'Apparaat toevoegen'}
+      <div className="row">
+        <h2>Camera&rsquo;s &amp; microfoons</h2>
+        <button
+          type="button"
+          onClick={() => {
+            setActiveCode(null);
+            setOpen(true);
+          }}
+        >
+          + Apparaat toevoegen
         </button>
-      </form>
+      </div>
 
       {error && <p className="error">{error}</p>}
 
-      {activeCode && (
-        <div className="codebox">
-          <div className="muted">Koppelcode (open de camera-app en voer deze in):</div>
-          <div className="code">{activeCode.code}</div>
-          <div className="muted">
-            Geldig tot {new Date(activeCode.expiresAt).toLocaleTimeString()}. Camera-app:{' '}
-            <code>http://localhost:5174</code>
-          </div>
-        </div>
-      )}
+      {/* Pairing code shown after regenerating it for an existing device. */}
+      {activeCode && <CodeBox code={activeCode.code} expiresAt={activeCode.expiresAt} />}
 
       {!devices && !error && <p className="muted">Laden…</p>}
       {devices && devices.length === 0 && <p className="muted">Nog geen apparaten.</p>}
@@ -170,6 +149,60 @@ export function DeviceManagement() {
           </tbody>
         </table>
       )}
+
+      {open && (
+        <Modal title="Apparaat toevoegen" onClose={() => setOpen(false)}>
+          <AddDeviceForm onCreated={refresh} />
+        </Modal>
+      )}
     </div>
+  );
+}
+
+function AddDeviceForm({ onCreated }: { onCreated: () => void }) {
+  const [name, setName] = useState('');
+  const [created, setCreated] = useState<PairingCode | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    const parsed = CreateDeviceSchema.safeParse({ name });
+    if (!parsed.success) {
+      setError(parsed.error.issues[0]?.message ?? 'Controleer de naam');
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await api.createDevice(parsed.data.name);
+      setCreated({ code: result.pairingCode, expiresAt: result.pairingExpiresAt });
+      await onCreated();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Toevoegen mislukt');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // After creation, show the pairing code to enter in the camera app.
+  if (created) {
+    return (
+      <div>
+        <p className="muted">Apparaat toegevoegd. Open de camera-app en voer deze koppelcode in:</p>
+        <CodeBox code={created.code} expiresAt={created.expiresAt} />
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={submit}>
+      <label htmlFor="dev-name">Naam apparaat (bijv. &ldquo;Lokaal 1 — voorkant&rdquo;)</label>
+      <input id="dev-name" value={name} onChange={(e) => setName(e.target.value)} />
+      {error && <p className="error">{error}</p>}
+      <button type="submit" disabled={busy}>
+        {busy ? 'Bezig…' : 'Apparaat toevoegen'}
+      </button>
+    </form>
   );
 }

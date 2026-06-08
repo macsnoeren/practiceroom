@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { CreateUserSchema, type UserDto } from '@practiceroom/shared';
 import { ApiError, api } from '../api.js';
+import { Modal } from './Modal.js';
+
+const ROLE_LABEL: Record<UserDto['role'], string> = {
+  admin: 'Beheerder',
+  teacher: 'Leraar',
+  student: 'Student',
+};
 
 export function UserManagement({ canCreate }: { canCreate: boolean }) {
   const [users, setUsers] = useState<UserDto[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     setListError(null);
@@ -20,42 +28,53 @@ export function UserManagement({ canCreate }: { canCreate: boolean }) {
   }, [refresh]);
 
   return (
-    <>
-      {canCreate && (
-        <div className="card">
-          <h2>Gebruiker toevoegen</h2>
-          <CreateUserForm onCreated={refresh} />
-        </div>
-      )}
-      <div className="card">
+    <div className="card">
+      <div className="row">
         <h2>Gebruikers in jouw school</h2>
-        {listError && <p className="error">{listError}</p>}
-        {!users && !listError && <p className="muted">Laden…</p>}
-        {users && users.length === 0 && <p className="muted">Nog geen gebruikers.</p>}
-        {users && users.length > 0 && (
-          <table>
-            <thead>
-              <tr>
-                <th>Naam</th>
-                <th>E-mail</th>
-                <th>Rol</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => (
-                <tr key={u.id}>
-                  <td>{u.name}</td>
-                  <td>{u.email}</td>
-                  <td>
-                    <span className="tag">{u.role}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        {canCreate && (
+          <button type="button" onClick={() => setOpen(true)}>
+            + Gebruiker toevoegen
+          </button>
         )}
       </div>
-    </>
+
+      {listError && <p className="error">{listError}</p>}
+      {!users && !listError && <p className="muted">Laden…</p>}
+      {users && users.length === 0 && <p className="muted">Nog geen gebruikers.</p>}
+      {users && users.length > 0 && (
+        <table>
+          <thead>
+            <tr>
+              <th>Naam</th>
+              <th>E-mail</th>
+              <th>Rol</th>
+            </tr>
+          </thead>
+          <tbody>
+            {users.map((u) => (
+              <tr key={u.id}>
+                <td>{u.name}</td>
+                <td>{u.email}</td>
+                <td>
+                  <span className="tag">{ROLE_LABEL[u.role]}</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {open && (
+        <Modal title="Gebruiker toevoegen" onClose={() => setOpen(false)}>
+          <CreateUserForm
+            onCreated={() => {
+              setOpen(false);
+              void refresh();
+            }}
+          />
+        </Modal>
+      )}
+    </div>
   );
 }
 
@@ -65,13 +84,11 @@ function CreateUserForm({ onCreated }: { onCreated: () => void }) {
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<'teacher' | 'student'>('student');
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    setSuccess(null);
 
     const parsed = CreateUserSchema.safeParse({ name, email, password, role });
     if (!parsed.success) {
@@ -81,11 +98,7 @@ function CreateUserForm({ onCreated }: { onCreated: () => void }) {
 
     setBusy(true);
     try {
-      const created = await api.createUser(parsed.data);
-      setSuccess(`${created.name} (${created.role}) toegevoegd.`);
-      setName('');
-      setEmail('');
-      setPassword('');
+      await api.createUser(parsed.data);
       onCreated();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Toevoegen mislukt');
@@ -124,7 +137,6 @@ function CreateUserForm({ onCreated }: { onCreated: () => void }) {
         <option value="teacher">Leraar</option>
       </select>
       {error && <p className="error">{error}</p>}
-      {success && <p className="success">{success}</p>}
       <button type="submit" disabled={busy}>
         {busy ? 'Bezig…' : 'Toevoegen'}
       </button>
