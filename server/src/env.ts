@@ -14,6 +14,9 @@ const EnvSchema = z.object({
   STORAGE_DIR: z.string().min(1).default('./storage'),
   // Secret used to sign playback URLs. Override with a strong value in production.
   SIGNING_SECRET: z.string().min(1).default('dev-insecure-signing-secret-change-me'),
+  // ffmpeg binary path. Empty = use the bundled @ffmpeg-installer binary.
+  // Point this at a system/Docker ffmpeg when you have one.
+  FFMPEG_PATH: z.string().default(''),
 });
 
 const parsed = EnvSchema.safeParse(process.env);

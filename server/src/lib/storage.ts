@@ -24,6 +24,24 @@ export async function recordingSize(recordingId: string): Promise<number> {
   }
 }
 
+/** Absolute path of a lesson's combined (composite) video file. */
+export function compositePath(lessonId: string): string {
+  return join(root, 'composites', `${lessonId}.mp4`);
+}
+
+/** Ensure the composites folder exists (the worker writes here via ffmpeg). */
+export async function ensureCompositeDir(lessonId: string): Promise<void> {
+  await mkdir(dirname(compositePath(lessonId)), { recursive: true });
+}
+
+export async function compositeSize(lessonId: string): Promise<number> {
+  try {
+    return (await stat(compositePath(lessonId))).size;
+  } catch {
+    return 0;
+  }
+}
+
 /** Remove all stored recordings (used by tests). */
 export async function clearStorage(): Promise<void> {
   await rm(root, { recursive: true, force: true });

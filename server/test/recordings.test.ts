@@ -168,10 +168,6 @@ describe('recordings: chunked upload and lifecycle', () => {
     // The file on disk is exactly the chunks concatenated, in order.
     const file = await readFile(recordingPath(recording.id));
     assert.deepEqual(file, Buffer.concat(chunks));
-
-    // The lesson is now "recorded" (its only recording is done).
-    const lesson = await prisma.lesson.findUnique({ where: { id: s.lessonId } });
-    assert.equal(lesson?.status, 'recorded');
   });
 
   it('rejects chunks from a different device', async () => {
@@ -188,11 +184,12 @@ describe('recordings: chunked upload and lifecycle', () => {
   it('starts recording only when a camera is online, and commands it', async () => {
     const s = await lessonSetup('start');
 
-    // No camera connected yet -> cannot start.
+    // Camera not connected yet -> cannot start.
     const offline = await app.inject({
       method: 'POST',
       url: `/api/lessons/${s.lessonId}/recording/start`,
       headers: { cookie: s.teacherCookie },
+      payload: { deviceId: s.device.id },
     });
     assert.equal(offline.statusCode, 400);
 
@@ -209,11 +206,12 @@ describe('recordings: chunked upload and lifecycle', () => {
       method: 'POST',
       url: `/api/lessons/${s.lessonId}/recording/start`,
       headers: { cookie: s.teacherCookie },
+      payload: { deviceId: s.device.id },
     });
     assert.equal(start.statusCode, 201);
     const received = await startMsg;
     assert.equal(received.lessonId, s.lessonId);
-    assert.equal(start.json()[0].id, received.recordingId);
+    assert.equal(start.json().id, received.recordingId);
 
     const lesson = await prisma.lesson.findUnique({ where: { id: s.lessonId } });
     assert.equal(lesson?.status, 'recording');
@@ -227,6 +225,66 @@ describe('recordings: chunked upload and lifecycle', () => {
     });
     assert.equal(stop.statusCode, 200);
     assert.equal((await stopMsg).recordingId, received.recordingId);
+  });
+
+  it('records one camera at a time: starting another stops the first', async () => {
+    const s = await lessonSetup('switch');
+    const dev2 = await pairedDevice(s.adminCookie, 'Cam 2');
+    await app.inject({
+      method: 'PUT',
+      url: `/api/lessons/${s.lessonId}/devices`,
+      headers: { cookie: s.teacherCookie },
+      payload: { deviceIds: [s.device.id, dev2.id] },
+    });
+
+    const cam1 = connectDevice(s.device.token);
+    const cam2 = connectDevice(dev2.token);
+    await Promise.all([waitConnect(cam1), waitConnect(cam2)]);
+    await delay(50);
+
+    const start1 = waitEvent(cam1, SOCKET_EVENTS.recordingStart);
+    await app.inject({
+      method: 'POST',
+      url: `/api/lessons/${s.lessonId}/recording/start`,
+      headers: { cookie: s.teacherCookie },
+      payload: { deviceId: s.device.id },
+    });
+    await start1;
+
+    // Switch to camera 2: camera 1 gets stop, camera 2 gets start.
+    const cam1Stop = waitEvent(cam1, SOCKET_EVENTS.recordingStop);
+    const cam2Start = waitEvent(cam2, SOCKET_EVENTS.recordingStart);
+    await app.inject({
+      method: 'POST',
+      url: `/api/lessons/${s.lessonId}/recording/start`,
+      headers: { cookie: s.teacherCookie },
+      payload: { deviceId: dev2.id },
+    });
+    await cam1Stop;
+    await cam2Start;
+
+    const recs = await prisma.recording.findMany({ where: { lessonId: s.lessonId } });
+    assert.equal(recs.length, 2);
+  });
+
+  it('finishing queues the composite and marks the lesson recorded', async () => {
+    const s = await lessonSetup('finish');
+    await prisma.recording.create({
+      data: { lessonId: s.lessonId, deviceId: s.device.id, status: 'completed' },
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/lessons/${s.lessonId}/recording/finish`,
+      headers: { cookie: s.teacherCookie },
+    });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().status, 'queued');
+
+    const lesson = await prisma.lesson.findUnique({ where: { id: s.lessonId } });
+    assert.equal(lesson?.status, 'recorded');
+    const composite = await prisma.compositeVideo.findUnique({ where: { lessonId: s.lessonId } });
+    assert.equal(composite?.status, 'queued');
   });
 });
 

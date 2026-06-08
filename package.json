@@ -13,8 +13,9 @@
     "camera"
   ],
   "scripts": {
-    "dev": "concurrently -n server,web,camera -c blue,green,magenta npm:dev:server npm:dev:web npm:dev:camera",
+    "dev": "concurrently -n server,worker,web,camera -c blue,yellow,green,magenta npm:dev:server npm:dev:worker npm:dev:web npm:dev:camera",
     "dev:server": "npm run dev -w server",
+    "dev:worker": "npm run worker -w server",
     "dev:web": "npm run dev -w web",
     "dev:camera": "npm run dev -w camera",
     "build": "npm run build -w shared && npm run build -w server && npm run build -w web && npm run build -w camera",

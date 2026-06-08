@@ -1,5 +1,15 @@
-import type { Device, Material, Prisma, Recording, School, User } from '@prisma/client';
 import type {
+  CompositeVideo,
+  Device,
+  Material,
+  Prisma,
+  Recording,
+  School,
+  User,
+} from '@prisma/client';
+import type {
+  CompositeStatus,
+  CompositeVideoDto,
   DeviceDto,
   LessonDetailDto,
   LessonDto,
@@ -62,6 +72,7 @@ export const lessonDetailInclude = {
   devices: { include: { device: { select: { id: true, name: true } } } },
   materials: { orderBy: { createdAt: 'asc' } },
   recordings: { orderBy: { startedAt: 'asc' } },
+  composite: true,
 } satisfies Prisma.LessonInclude;
 
 type LessonListRow = Prisma.LessonGetPayload<{ include: typeof lessonListInclude }>;
@@ -104,11 +115,20 @@ export function toRecordingDto(recording: Recording): RecordingDto {
   };
 }
 
+export function toCompositeVideoDto(composite: CompositeVideo): CompositeVideoDto {
+  return {
+    status: composite.status as CompositeStatus,
+    sizeBytes: composite.sizeBytes,
+    error: composite.error,
+  };
+}
+
 export function toLessonDetailDto(lesson: LessonDetailRow): LessonDetailDto {
   return {
     ...toLessonDto(lesson),
     devices: lesson.devices.map((d) => ({ id: d.device.id, name: d.device.name })),
     materials: lesson.materials.map(toMaterialDto),
     recordings: lesson.recordings.map(toRecordingDto),
+    composite: lesson.composite ? toCompositeVideoDto(lesson.composite) : null,
   };
 }

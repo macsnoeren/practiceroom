@@ -262,3 +262,33 @@ td {
   background: #000;
   aspect-ratio: 16 / 9;
 }
+
+.camera-controls {
+  margin: 0.5rem 0;
+}
+
+.camera-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid #eee;
+}
+
+.camera-row button {
+  margin-top: 0;
+}
+
+.recording-buttons {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+}
+
+.tag.rec {
+  background: #fdecea;
+  color: #c0392b;
+}

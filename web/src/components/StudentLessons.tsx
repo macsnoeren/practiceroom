@@ -3,6 +3,7 @@ import { type LessonDetailDto, type LessonDto } from '@practiceroom/shared';
 import { ApiError, api } from '../api.js';
 import { formatWhen } from '../format.js';
 import { LessonPlayer } from './LessonPlayer.js';
+import { CompositePlayer } from './CompositePlayer.js';
 
 export function StudentLessons() {
   const [lessons, setLessons] = useState<LessonDto[] | null>(null);
@@ -68,11 +69,12 @@ function StudentLessonDetail({ lessonId }: { lessonId: string }) {
 
   return (
     <div className="lesson-detail">
+      <CompositePlayer lessonId={detail.id} composite={detail.composite} />
       <LessonPlayer
         recordings={detail.recordings}
         deviceName={(id) => detail.devices.find((d) => d.id === id)?.name ?? 'Camera'}
       />
-      {!hasRecording && (
+      {!hasRecording && !detail.composite && (
         <p className="muted">Na de les verschijnt hier de opname om terug te kijken.</p>
       )}
 

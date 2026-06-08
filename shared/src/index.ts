@@ -242,10 +242,29 @@ export const PlaybackUrlSchema = z.object({
 });
 export type PlaybackUrl = z.infer<typeof PlaybackUrlSchema>;
 
+/** Staff starts recording on ONE specific camera (switching stops the rest). */
+export const StartRecordingInputSchema = z.object({
+  deviceId: z.string().min(1),
+});
+export type StartRecordingInput = z.infer<typeof StartRecordingInputSchema>;
+
+/** The single combined lesson video produced by the worker. */
+export const COMPOSITE_STATUSES = ['queued', 'processing', 'completed', 'failed'] as const;
+export const CompositeStatusSchema = z.enum(COMPOSITE_STATUSES);
+export type CompositeStatus = (typeof COMPOSITE_STATUSES)[number];
+
+export const CompositeVideoDtoSchema = z.object({
+  status: CompositeStatusSchema,
+  sizeBytes: z.number(),
+  error: z.string().nullable(),
+});
+export type CompositeVideoDto = z.infer<typeof CompositeVideoDtoSchema>;
+
 export const LessonDetailDtoSchema = LessonDtoSchema.extend({
   devices: z.array(DeviceMiniSchema),
   materials: z.array(MaterialDtoSchema),
   recordings: z.array(RecordingDtoSchema),
+  composite: CompositeVideoDtoSchema.nullable(),
 });
 export type LessonDetailDto = z.infer<typeof LessonDetailDtoSchema>;
 

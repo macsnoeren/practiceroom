@@ -11,6 +11,7 @@ import { ApiError, api } from '../api.js';
 import { formatBytes, formatWhen } from '../format.js';
 import { usePresence } from '../usePresence.js';
 import { LessonPlayer } from './LessonPlayer.js';
+import { CompositePlayer } from './CompositePlayer.js';
 
 export function LessonManagement({ isAdmin }: { isAdmin: boolean }) {
   const [lessons, setLessons] = useState<LessonDto[] | null>(null);
@@ -219,23 +220,33 @@ function LessonDetail({
     void load();
   }, [load]);
 
-  async function startRecording() {
+  async function startSegment(deviceId: string) {
     setError(null);
     try {
-      await api.startRecording(lessonId);
+      await api.startRecording(lessonId, deviceId);
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Opname starten mislukt');
     }
   }
 
-  async function stopRecording() {
+  async function stopSegment() {
     setError(null);
     try {
       await api.stopRecording(lessonId);
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Opname stoppen mislukt');
+    }
+  }
+
+  async function finishRecording() {
+    setError(null);
+    try {
+      await api.finishRecording(lessonId);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Afronden mislukt');
     }
   }
 
@@ -283,11 +294,14 @@ function LessonDetail({
       <h3>Opname</h3>
       <RecordingControls
         detail={detail}
-        onlineSelected={detail.devices.filter((d) => online.has(d.id)).length}
-        onStart={startRecording}
-        onStop={stopRecording}
+        online={online}
+        onStart={startSegment}
+        onStop={stopSegment}
+        onFinish={finishRecording}
         onRefresh={load}
       />
+
+      <CompositePlayer lessonId={lessonId} composite={detail.composite} />
 
       <LessonPlayer
         recordings={detail.recordings}
@@ -398,48 +412,82 @@ function MaterialForm({ lessonId, onAdded }: { lessonId: string; onAdded: () => 
 
 function RecordingControls({
   detail,
-  onlineSelected,
+  online,
   onStart,
   onStop,
+  onFinish,
   onRefresh,
 }: {
   detail: LessonDetailDto;
-  onlineSelected: number;
-  onStart: () => void;
+  online: Set<string>;
+  onStart: (deviceId: string) => void;
   onStop: () => void;
+  onFinish: () => void;
   onRefresh: () => void;
 }) {
-  const isRecording = detail.status === 'recording';
+  const activeDeviceId = detail.recordings.find((r) => r.status === 'recording')?.deviceId ?? null;
+  const deviceName = (id: string) => detail.devices.find((d) => d.id === id)?.name ?? 'Camera';
+
   return (
     <div>
       <p className="muted">
-        Status: <strong>{detail.status}</strong> · {onlineSelected} geselecteerde camera(’s) online
+        Eén camera tegelijk. Start je een andere, dan stopt de vorige. Met “Les afronden” wordt er
+        één video van gemaakt.
       </p>
-      {isRecording ? (
-        <button type="button" onClick={onStop}>
-          Stop opname
-        </button>
-      ) : (
-        <button type="button" onClick={onStart} disabled={onlineSelected === 0}>
-          Start opname
-        </button>
+
+      {detail.devices.length === 0 && (
+        <p className="muted">Selecteer eerst camera’s voor deze les.</p>
       )}
+
+      <div className="camera-controls">
+        {detail.devices.map((d) => {
+          const isOnline = online.has(d.id);
+          const isActive = activeDeviceId === d.id;
+          return (
+            <div key={d.id} className="camera-row">
+              <span>
+                {d.name}{' '}
+                {isActive ? (
+                  <span className="tag rec">● opname</span>
+                ) : isOnline ? (
+                  <span className="tag tag-ok">online</span>
+                ) : (
+                  <span className="tag">offline</span>
+                )}
+              </span>
+              <button type="button" onClick={() => onStart(d.id)} disabled={!isOnline || isActive}>
+                {activeDeviceId ? 'Wissel hierheen' : 'Start'}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="recording-buttons">
+        {activeDeviceId && (
+          <button type="button" className="secondary" onClick={onStop}>
+            Stop ({deviceName(activeDeviceId)})
+          </button>
+        )}
+        <button type="button" onClick={onFinish} disabled={detail.recordings.length === 0}>
+          Les afronden &amp; video maken
+        </button>
+        <button type="button" className="linkbtn" onClick={onRefresh}>
+          Vernieuwen
+        </button>
+      </div>
+
       {detail.recordings.length > 0 && (
         <ul className="material-list">
-          {detail.recordings.map((r) => (
+          {detail.recordings.map((r, i) => (
             <li key={r.id}>
               <div>
-                Camera-opname <span className="tag">{r.status}</span>{' '}
+                Segment {i + 1}: {deviceName(r.deviceId)} <span className="tag">{r.status}</span>{' '}
                 {r.sizeBytes > 0 && <span className="muted">{formatBytes(r.sizeBytes)}</span>}
               </div>
             </li>
           ))}
         </ul>
-      )}
-      {isRecording && (
-        <button type="button" className="linkbtn" onClick={onRefresh}>
-          Vernieuwen
-        </button>
       )}
     </div>
   );

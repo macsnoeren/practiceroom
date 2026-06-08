@@ -1,28 +1,21 @@
-import { createReadStream } from 'node:fs';
-import { stat } from 'node:fs/promises';
 import type { FastifyInstance } from 'fastify';
 import { authenticateDevice } from '../auth/device.js';
 import { requireAuth } from '../auth/plugin.js';
 import { prisma } from '../db.js';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
 import { canViewLesson } from '../lib/lesson-access.js';
-import { signPlayback, verifyPlayback } from '../lib/signing.js';
+import {
+  PLAYBACK_TTL_MS,
+  recordingResource,
+  signPlayback,
+  verifyPlayback,
+} from '../lib/signing.js';
 import { appendChunk, recordingPath, recordingSize } from '../lib/storage.js';
+import { streamFile } from '../lib/stream.js';
 import { toRecordingDto } from '../lib/dto.js';
 
 interface RecordingParam {
   id: string;
-}
-
-const PLAYBACK_TTL_MS = 60 * 60 * 1000; // 1 hour
-
-function parseRange(header: string, size: number): { start: number; end: number } | null {
-  const match = /^bytes=(\d*)-(\d*)$/.exec(header);
-  if (!match) return null;
-  const start = match[1] ? Number(match[1]) : 0;
-  const end = match[2] ? Number(match[2]) : size - 1;
-  if (start > end || start >= size) return null;
-  return { start, end: Math.min(end, size - 1) };
 }
 
 export async function recordingRoutes(app: FastifyInstance): Promise<void> {
@@ -87,16 +80,8 @@ export async function recordingRoutes(app: FastifyInstance): Promise<void> {
       },
     });
 
-    // When every recording for the lesson is done, the lesson is "recorded".
-    const remaining = await prisma.recording.count({
-      where: { lessonId: recording.lessonId, status: 'recording' },
-    });
-    if (remaining === 0) {
-      await prisma.lesson.update({
-        where: { id: recording.lessonId },
-        data: { status: 'recorded' },
-      });
-    }
+    // Completing a single segment does not end the lesson; the teacher does
+    // that explicitly via "finish", which also queues the composite worker.
     return toRecordingDto(completed);
   });
 
@@ -118,7 +103,7 @@ export async function recordingRoutes(app: FastifyInstance): Promise<void> {
     if (recording.status !== 'completed') throw badRequest('Opname is nog niet klaar');
 
     const expires = Date.now() + PLAYBACK_TTL_MS;
-    const signature = signPlayback(id, expires);
+    const signature = signPlayback(recordingResource(id), expires);
     return {
       url: `/api/recordings/${id}/stream?expires=${expires}&sig=${signature}`,
       expiresAt: new Date(expires).toISOString(),
@@ -132,7 +117,7 @@ export async function recordingRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/recordings/:id/stream', async (request, reply) => {
     const { id } = request.params as RecordingParam;
     const query = request.query as { expires?: string; sig?: string };
-    if (!verifyPlayback(id, Number(query.expires), String(query.sig ?? ''))) {
+    if (!verifyPlayback(recordingResource(id), Number(query.expires), String(query.sig ?? ''))) {
       throw forbidden('Link is ongeldig of verlopen');
     }
 
@@ -145,34 +130,6 @@ export async function recordingRoutes(app: FastifyInstance): Promise<void> {
       throw notFound('Opname niet gevonden');
     if (!canViewLesson(me, recording.lesson)) throw forbidden();
 
-    const path = recordingPath(id);
-    let size: number;
-    try {
-      size = (await stat(path)).size;
-    } catch {
-      throw notFound('Opnamebestand niet gevonden');
-    }
-
-    const contentType = recording.mimeType ?? 'video/webm';
-    const rangeHeader = request.headers.range;
-    if (rangeHeader) {
-      const range = parseRange(rangeHeader, size);
-      if (!range) {
-        return reply.code(416).header('Content-Range', `bytes */${size}`).send();
-      }
-      reply
-        .code(206)
-        .header('Content-Type', contentType)
-        .header('Accept-Ranges', 'bytes')
-        .header('Content-Range', `bytes ${range.start}-${range.end}/${size}`)
-        .header('Content-Length', range.end - range.start + 1);
-      return reply.send(createReadStream(path, { start: range.start, end: range.end }));
-    }
-
-    reply
-      .header('Content-Type', contentType)
-      .header('Accept-Ranges', 'bytes')
-      .header('Content-Length', size);
-    return reply.send(createReadStream(path));
+    return streamFile(request, reply, recordingPath(id), recording.mimeType ?? 'video/webm');
   });
 }

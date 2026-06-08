@@ -76,16 +76,32 @@ model Lesson {
   status          String   @default("planned")
   createdAt       DateTime @default(now())
 
-  school     School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  teacher    User           @relation("TeacherLessons", fields: [teacherId], references: [id], onDelete: Cascade)
-  student    User           @relation("StudentLessons", fields: [studentId], references: [id], onDelete: Cascade)
+  school     School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  teacher    User            @relation("TeacherLessons", fields: [teacherId], references: [id], onDelete: Cascade)
+  student    User            @relation("StudentLessons", fields: [studentId], references: [id], onDelete: Cascade)
   devices    LessonDevice[]
   materials  Material[]
   recordings Recording[]
+  composite  CompositeVideo?
 
   @@index([schoolId])
   @@index([teacherId])
   @@index([studentId])
+}
+
+/// The single combined video for a lesson: its recording segments concatenated
+/// in time order by the worker. One per lesson.
+model CompositeVideo {
+  id          String    @id @default(cuid())
+  lessonId    String    @unique
+  status      String    @default("queued") // queued | processing | completed | failed
+  sizeBytes   Int       @default(0)
+  error       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime?
+
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
 }
 
 /// One recorded video file per device per lesson. Chunks are appended in order

@@ -87,8 +87,22 @@ npm run test -w server   # integratietests: tenant-isolatie, auth, device-pairin
   met Range-support; videospeler in dashboard en bij de student, met schakelen
   tussen camerahoeken. Een gekopieerde link werkt niet voor een niet-deelnemer en
   verloopt. + tests. ✅
+- **Fase 7** — één lesvideo: per les neemt **één camera tegelijk** op (een andere
+  starten stopt de vorige) → segmenten. Een aparte **worker** (`npm run worker`)
+  voegt de segmenten met ffmpeg in de tijd samen tot **één video per les**. + tests
+  (incl. echte ffmpeg-concat). ✅
 
-Volgende fases: samengevoegde rastervideo, beveiliging/uitrol. Zie het projectplan.
+Volgende fases: beveiliging/uitrol. Zie het projectplan.
+
+### Eén lesvideo (fase 7)
+
+- Opname per camera: `POST /api/lessons/:id/recording/start` `{ deviceId }`
+  (stopt automatisch de lopende camera), `…/stop`, `…/finish` (sluit af + zet de
+  samenvoeg-taak in de wachtrij).
+- **Worker** (`server/src/worker/`, los proces): pollt `CompositeVideo`-taken en
+  draait ffmpeg-concat → `server/storage/composites/<lesId>.mp4`. ffmpeg via
+  `@ffmpeg-installer/ffmpeg`; overschrijf met `FFMPEG_PATH` (bijv. Docker/systeem).
+- Afspelen: `GET /api/lessons/:id/composite/playback-url` + `…/composite/stream`.
 
 ### Terugkijken (fase 6)
 

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   CreateDeviceResultSchema,
   DeviceDtoSchema,
+  CompositeVideoDtoSchema,
   LessonDetailDtoSchema,
   LessonDtoSchema,
   MaterialDtoSchema,
@@ -136,14 +137,21 @@ export const api = {
   deleteMaterial: (lessonId: string, materialId: string) =>
     requestVoid(`/api/lessons/${lessonId}/materials/${materialId}`, { method: 'DELETE' }),
 
-  startRecording: (lessonId: string) =>
-    request(`/api/lessons/${lessonId}/recording/start`, z.array(RecordingDtoSchema), {
+  startRecording: (lessonId: string, deviceId: string) =>
+    request(`/api/lessons/${lessonId}/recording/start`, RecordingDtoSchema, {
       method: 'POST',
+      body: JSON.stringify({ deviceId }),
     }),
   stopRecording: (lessonId: string) =>
     request(`/api/lessons/${lessonId}/recording/stop`, z.object({ stopped: z.number() }), {
       method: 'POST',
     }),
+  finishRecording: (lessonId: string) =>
+    request(`/api/lessons/${lessonId}/recording/finish`, CompositeVideoDtoSchema, {
+      method: 'POST',
+    }),
   getPlaybackUrl: (recordingId: string) =>
     request(`/api/recordings/${recordingId}/playback-url`, PlaybackUrlSchema),
+  getCompositePlaybackUrl: (lessonId: string) =>
+    request(`/api/lessons/${lessonId}/composite/playback-url`, PlaybackUrlSchema),
 };
