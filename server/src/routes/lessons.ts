@@ -45,6 +45,14 @@ async function assertUserInSchool(id: string, schoolId: string, role: Role): Pro
   if (!user) throw badRequest(`Geen ${role} gevonden in deze school`);
 }
 
+// A lesson's teacher may be a teacher OR an admin (admins teach too).
+async function assertCanTeach(id: string, schoolId: string): Promise<void> {
+  const user = await prisma.user.findFirst({
+    where: { id, schoolId, role: { in: ['teacher', 'admin'] } },
+  });
+  if (!user) throw badRequest('Geen geldige leraar gekozen');
+}
+
 export async function lessonRoutes(app: FastifyInstance): Promise<void> {
   // List lessons relevant to the caller (own school; scoped by role). Lessons
   // that fall within a school holiday are dropped from the schedule (they
@@ -85,10 +93,11 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
       const me = requireAuth(request);
       const input = CreateLessonSchema.parse(request.body);
 
-      // A teacher always teaches their own lessons; an admin must pick a teacher.
+      // A teacher always teaches their own lessons; an admin picks a teacher
+      // (which may be another teacher or the admin themselves).
       const teacherId = me.role === 'teacher' ? me.id : input.teacherId;
       if (!teacherId) throw badRequest('Kies een leraar');
-      await assertUserInSchool(teacherId, me.schoolId, 'teacher');
+      await assertCanTeach(teacherId, me.schoolId);
       await assertUserInSchool(input.studentId, me.schoolId, 'student');
 
       // Weekly recurrence: plan the same lesson for several weeks, skipping any

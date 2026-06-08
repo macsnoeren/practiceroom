@@ -230,4 +230,44 @@ describe('lessons: planning, scoping and material', () => {
     assert.equal(adminEdit.statusCode, 200);
     assert.equal(adminEdit.json().status, 'ready');
   });
+
+  it('lets an admin be the teacher of a lesson', async () => {
+    const admin = await registerSchool(app, 'Admin Teaches', 'at-admin@example.com');
+    const adminId = admin.body.user.id as string;
+    const student = await createUser(app, admin.cookie, {
+      name: 'Stud',
+      email: 'at-student@example.com',
+      role: 'student',
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/lessons',
+      headers: { cookie: admin.cookie },
+      payload: {
+        teacherId: adminId,
+        studentId: student.id,
+        startsAt: soon(),
+        durationMinutes: 30,
+      },
+    });
+    assert.equal(res.statusCode, 201, res.body);
+    assert.equal(res.json().teacher.id, adminId);
+  });
+
+  it('rejects a student as the teacher', async () => {
+    const s = await makeSchool('No Student Teacher', 'nst');
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/lessons',
+      headers: { cookie: s.adminCookie },
+      payload: {
+        teacherId: s.student.id,
+        studentId: s.student.id,
+        startsAt: soon(),
+        durationMinutes: 30,
+      },
+    });
+    assert.equal(res.statusCode, 400);
+  });
 });

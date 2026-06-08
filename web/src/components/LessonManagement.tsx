@@ -34,7 +34,8 @@ export function LessonManagement({ isAdmin }: { isAdmin: boolean }) {
     void refreshLessons();
     void api.listUsers().then((users) => {
       setStudents(users.filter((u) => u.role === 'student'));
-      setTeachers(users.filter((u) => u.role === 'teacher'));
+      // Admins teach too, so they can be chosen as a lesson's teacher.
+      setTeachers(users.filter((u) => u.role === 'teacher' || u.role === 'admin'));
     });
     void api.listDevices().then(setDevices);
   }, [refreshLessons]);
@@ -162,6 +163,7 @@ function LessonForm({
             {teachers.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}
+                {t.role === 'admin' ? ' (beheerder)' : ''}
               </option>
             ))}
           </select>
