@@ -163,8 +163,23 @@ export const CreateLessonSchema = z.object({
   startsAt: z.string().datetime(),
   durationMinutes: z.number().int().min(5).max(600),
   repeatWeeks: z.number().int().min(1).max(52).optional(),
+  roomId: z.string().min(1).optional(),
 });
 export type CreateLessonInput = z.infer<typeof CreateLessonSchema>;
+
+/** A room/location. */
+export const CreateRoomSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+});
+export type CreateRoomInput = z.infer<typeof CreateRoomSchema>;
+
+export const RoomDtoSchema = z.object({
+  id: z.string(),
+  schoolId: z.string(),
+  name: z.string(),
+  createdAt: z.string(),
+});
+export type RoomDto = z.infer<typeof RoomDtoSchema>;
 
 const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Gebruik een datum (JJJJ-MM-DD)');
 
@@ -198,6 +213,7 @@ export const UpdateLessonSchema = z.object({
   durationMinutes: z.number().int().min(5).max(600).optional(),
   status: LessonStatusSchema.optional(),
   notes: z.string().max(5000).nullable().optional(),
+  roomId: z.string().min(1).nullable().optional(),
 });
 export type UpdateLessonInput = z.infer<typeof UpdateLessonSchema>;
 
@@ -246,6 +262,7 @@ export const LessonDtoSchema = z.object({
   status: LessonStatusSchema,
   seriesId: z.string().nullable(),
   notes: z.string().nullable(),
+  room: z.object({ id: z.string(), name: z.string() }).nullable(),
   createdAt: z.string(),
 });
 export type LessonDto = z.infer<typeof LessonDtoSchema>;

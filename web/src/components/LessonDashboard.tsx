@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { CreateMaterialSchema, type DeviceDto, type LessonDetailDto } from '@practiceroom/shared';
+import {
+  CreateMaterialSchema,
+  type DeviceDto,
+  type LessonDetailDto,
+  type RoomDto,
+} from '@practiceroom/shared';
 import { ApiError, api } from '../api.js';
 import { formatBytes, formatWhen } from '../format.js';
 import { usePresence } from '../usePresence.js';
@@ -15,6 +20,7 @@ export function LessonDashboard() {
 
   const [detail, setDetail] = useState<LessonDetailDto | null>(null);
   const [devices, setDevices] = useState<DeviceDto[]>([]);
+  const [rooms, setRooms] = useState<RoomDto[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -29,6 +35,10 @@ export function LessonDashboard() {
   useEffect(() => {
     void load();
     void api.listDevices().then(setDevices);
+    void api
+      .listRooms()
+      .then(setRooms)
+      .catch(() => undefined);
   }, [load]);
 
   const deviceName = (deviceId: string) =>
@@ -87,6 +97,23 @@ export function LessonDashboard() {
           </div>
           <span className="tag">{detail.status}</span>
         </div>
+
+        <label htmlFor="lesson-room">Lokaal</label>
+        <select
+          id="lesson-room"
+          value={detail.room?.id ?? ''}
+          onChange={(e) =>
+            run(() => api.updateLesson(id, { roomId: e.target.value || null }), 'Opslaan mislukt')
+          }
+        >
+          <option value="">— geen lokaal —</option>
+          {rooms.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.name}
+            </option>
+          ))}
+        </select>
+
         {error && <p className="error">{error}</p>}
       </div>
 

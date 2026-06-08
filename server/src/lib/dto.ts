@@ -5,6 +5,7 @@ import type {
   Material,
   Prisma,
   Recording,
+  Room,
   School,
   User,
 } from '@prisma/client';
@@ -20,6 +21,7 @@ import type {
   RecordingDto,
   RecordingStatus,
   Role,
+  RoomDto,
   SchoolDto,
   UserDto,
 } from '@practiceroom/shared';
@@ -66,16 +68,20 @@ export function toDeviceDto(device: Device): DeviceDto {
 
 const personSelect = { select: { id: true, name: true } } as const;
 
+const roomSelect = { select: { id: true, name: true } } as const;
+
 /** Prisma include shared by the lesson list endpoints. */
 export const lessonListInclude = {
   teacher: personSelect,
   student: personSelect,
+  room: roomSelect,
 } satisfies Prisma.LessonInclude;
 
 /** Prisma include for a full lesson (with cameras, material and recordings). */
 export const lessonDetailInclude = {
   teacher: personSelect,
   student: personSelect,
+  room: roomSelect,
   devices: { include: { device: { select: { id: true, name: true } } } },
   materials: { orderBy: { createdAt: 'asc' } },
   recordings: { orderBy: { startedAt: 'asc' } },
@@ -108,7 +114,17 @@ export function toLessonDto(lesson: LessonListRow): LessonDto {
     status: lesson.status as LessonStatus,
     seriesId: lesson.seriesId,
     notes: lesson.notes,
+    room: lesson.room ? { id: lesson.room.id, name: lesson.room.name } : null,
     createdAt: lesson.createdAt.toISOString(),
+  };
+}
+
+export function toRoomDto(room: Room): RoomDto {
+  return {
+    id: room.id,
+    schoolId: room.schoolId,
+    name: room.name,
+    createdAt: room.createdAt.toISOString(),
   };
 }
 

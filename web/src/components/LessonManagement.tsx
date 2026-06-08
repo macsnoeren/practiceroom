@@ -4,6 +4,7 @@ import {
   CreateLessonSchema,
   type LessonDto,
   type HolidayDto,
+  type RoomDto,
   type UserDto,
 } from '@practiceroom/shared';
 import { ApiError, api } from '../api.js';
@@ -52,7 +53,10 @@ function DayColumn({
       {lessons.map((l) => (
         <Link key={l.id} to={`/lessons/${l.id}`} className="lesson-chip">
           <strong>{timeOf(l.startsAt)}</strong> {l.title || 'Les'}
-          <div className="muted">{l.student.name}</div>
+          <div className="muted">
+            {l.student.name} · {l.teacher.name}
+            {l.room ? ` · ${l.room.name}` : ''}
+          </div>
         </Link>
       ))}
       {!holiday && lessons.length === 0 && <div className="cal-empty">Geen lessen</div>}
@@ -65,11 +69,14 @@ export function LessonManagement({ isAdmin }: { isAdmin: boolean }) {
   const [holidays, setHolidays] = useState<HolidayDto[]>([]);
   const [students, setStudents] = useState<UserDto[]>([]);
   const [teachers, setTeachers] = useState<UserDto[]>([]);
+  const [rooms, setRooms] = useState<RoomDto[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const [view, setView] = useState<View>('week');
   const [anchor, setAnchor] = useState<Date>(() => new Date());
   const [studentId, setStudentId] = useState('');
+  const [teacherId, setTeacherId] = useState('');
+  const [roomId, setRoomId] = useState('');
   const [planDate, setPlanDate] = useState<string | null>(null); // non-null = modal open
 
   const refresh = useCallback(async () => {
@@ -91,20 +98,26 @@ export function LessonManagement({ isAdmin }: { isAdmin: boolean }) {
       setStudents(users.filter((u) => u.role === 'student'));
       setTeachers(users.filter((u) => u.role === 'teacher' || u.role === 'admin'));
     });
+    void api
+      .listRooms()
+      .then(setRooms)
+      .catch(() => undefined);
   }, [refresh]);
 
-  // Group the (optionally student-filtered) lessons by local day.
+  // Group the (optionally filtered) lessons by local day.
   const byDay = useMemo(() => {
     const map = new Map<string, LessonDto[]>();
     for (const l of lessons ?? []) {
       if (studentId && l.student.id !== studentId) continue;
+      if (teacherId && l.teacher.id !== teacherId) continue;
+      if (roomId && l.room?.id !== roomId) continue;
       const key = ymd(new Date(l.startsAt));
       const arr = map.get(key);
       if (arr) arr.push(l);
       else map.set(key, [l]);
     }
     return map;
-  }, [lessons, studentId]);
+  }, [lessons, studentId, teacherId, roomId]);
 
   const days = view === 'day' ? [anchor] : view === 'week' ? weekDays(anchor) : monthGrid(anchor);
 
@@ -184,6 +197,30 @@ export function LessonManagement({ isAdmin }: { isAdmin: boolean }) {
                 </option>
               ))}
             </select>
+            <select
+              value={teacherId}
+              onChange={(e) => setTeacherId(e.target.value)}
+              aria-label="Filter op leraar"
+            >
+              <option value="">Alle leraren</option>
+              {teachers.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={roomId}
+              onChange={(e) => setRoomId(e.target.value)}
+              aria-label="Filter op lokaal"
+            >
+              <option value="">Alle lokalen</option>
+              {rooms.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -243,6 +280,7 @@ export function LessonManagement({ isAdmin }: { isAdmin: boolean }) {
             isAdmin={isAdmin}
             students={students}
             teachers={teachers}
+            rooms={rooms}
             initialDate={planDate || undefined}
             onCreated={() => {
               setPlanDate(null);
@@ -259,17 +297,20 @@ function LessonForm({
   isAdmin,
   students,
   teachers,
+  rooms,
   initialDate,
   onCreated,
 }: {
   isAdmin: boolean;
   students: UserDto[];
   teachers: UserDto[];
+  rooms: RoomDto[];
   initialDate?: string;
   onCreated: () => void;
 }) {
   const [studentId, setStudentId] = useState('');
   const [teacherId, setTeacherId] = useState('');
+  const [roomId, setRoomId] = useState('');
   const [title, setTitle] = useState('');
   const [startsAt, setStartsAt] = useState(initialDate ?? '');
   const [duration, setDuration] = useState(30);
@@ -289,6 +330,7 @@ function LessonForm({
       startsAt: startsAt ? new Date(startsAt).toISOString() : '',
       durationMinutes: duration,
       repeatWeeks: repeat ? weeks : undefined,
+      roomId: roomId || undefined,
     };
     const parsed = CreateLessonSchema.safeParse(input);
     if (!parsed.success || (isAdmin && !teacherId)) {
@@ -356,6 +398,20 @@ function LessonForm({
         value={duration}
         onChange={(e) => setDuration(Number(e.target.value))}
       />
+
+      {rooms.length > 0 && (
+        <>
+          <label htmlFor="lf-room">Lokaal (optioneel)</label>
+          <select id="lf-room" value={roomId} onChange={(e) => setRoomId(e.target.value)}>
+            <option value="">— geen lokaal —</option>
+            {rooms.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+        </>
+      )}
 
       <label className="checkbox" style={{ marginTop: '1rem' }}>
         <input type="checkbox" checked={repeat} onChange={(e) => setRepeat(e.target.checked)} />

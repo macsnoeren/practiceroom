@@ -21,6 +21,20 @@ model School {
   devices  Device[]
   lessons  Lesson[]
   holidays Holiday[]
+  rooms    Room[]
+}
+
+/// A physical room/location where lessons take place. School-scoped.
+model Room {
+  id        String   @id @default(cuid())
+  schoolId  String
+  name      String
+  createdAt DateTime @default(now())
+
+  school  School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  lessons Lesson[]
+
+  @@index([schoolId])
 }
 
 /// A school holiday/break period. Recurring lessons skip weeks that fall in a
@@ -92,11 +106,13 @@ model Lesson {
   status          String   @default("planned")
   seriesId        String? // links the lessons of one weekly-recurring series
   notes           String? // free-text lesson notes by the teacher
+  roomId          String?
   createdAt       DateTime @default(now())
 
   school     School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   teacher    User            @relation("TeacherLessons", fields: [teacherId], references: [id], onDelete: Cascade)
   student    User            @relation("StudentLessons", fields: [studentId], references: [id], onDelete: Cascade)
+  room       Room?           @relation(fields: [roomId], references: [id], onDelete: SetNull)
   devices    LessonDevice[]
   materials  Material[]
   recordings Recording[]
@@ -106,6 +122,7 @@ model Lesson {
   @@index([teacherId])
   @@index([studentId])
   @@index([seriesId])
+  @@index([roomId])
 }
 
 /// The single combined video for a lesson: its recording segments concatenated

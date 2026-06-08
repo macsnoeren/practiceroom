@@ -10,6 +10,7 @@ import {
   PairingCodeResultSchema,
   PlaybackUrlSchema,
   RecordingDtoSchema,
+  RoomDtoSchema,
   SchoolDtoSchema,
   UserDtoSchema,
   type CreateHolidayInput,
@@ -162,4 +163,9 @@ export const api = {
   createHoliday: (input: CreateHolidayInput) =>
     request('/api/holidays', HolidayDtoSchema, { method: 'POST', body: JSON.stringify(input) }),
   deleteHoliday: (id: string) => requestVoid(`/api/holidays/${id}`, { method: 'DELETE' }),
+
+  listRooms: () => request('/api/rooms', z.array(RoomDtoSchema)),
+  createRoom: (name: string) =>
+    request('/api/rooms', RoomDtoSchema, { method: 'POST', body: JSON.stringify({ name }) }),
+  deleteRoom: (id: string) => requestVoid(`/api/rooms/${id}`, { method: 'DELETE' }),
 };

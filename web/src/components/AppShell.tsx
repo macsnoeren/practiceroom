@@ -8,6 +8,7 @@ import { DeviceManagement } from './DeviceManagement.js';
 import { UserManagement } from './UserManagement.js';
 import { StudentLessons } from './StudentLessons.js';
 import { HolidayManagement } from './HolidayManagement.js';
+import { RoomManagement } from './RoomManagement.js';
 
 const ROLE_LABEL: Record<UserDto['role'], string> = {
   admin: 'Beheerder',
@@ -60,6 +61,9 @@ export function AppShell({ user, onLogout }: { user: UserDto; onLogout: () => vo
             <NavLink to="/devices" className={navClass}>
               <span className="ico">🎥</span> Camera&rsquo;s
             </NavLink>
+            <NavLink to="/rooms" className={navClass}>
+              <span className="ico">🚪</span> Lokalen
+            </NavLink>
             <NavLink to="/holidays" className={navClass}>
               <span className="ico">🏖️</span> Vakanties
             </NavLink>
@@ -109,13 +113,21 @@ export function AppShell({ user, onLogout }: { user: UserDto; onLogout: () => vo
                 }
               />
               <Route
+                path="/rooms"
+                element={
+                  <Page title="Lokalen" subtitle="Beheer de lokalen waar lessen plaatsvinden.">
+                    <RoomManagement canManage={isAdmin} />
+                  </Page>
+                }
+              />
+              <Route
                 path="/holidays"
                 element={
                   <Page
                     title="Vakanties"
                     subtitle="Voer schoolvakanties in; herhalende lessen slaan deze over."
                   >
-                    <HolidayManagement />
+                    <HolidayManagement canManage={isAdmin} />
                   </Page>
                 }
               />

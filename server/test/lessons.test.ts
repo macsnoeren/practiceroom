@@ -343,3 +343,56 @@ describe('lessons: planning, scoping and material', () => {
     assert.equal(start.statusCode, 400);
   });
 });
+
+describe('rooms', () => {
+  function createRoom(cookie: string, name: string) {
+    return app.inject({
+      method: 'POST',
+      url: '/api/rooms',
+      headers: { cookie },
+      payload: { name },
+    });
+  }
+  function listRooms(cookie: string) {
+    return app.inject({ method: 'GET', url: '/api/rooms', headers: { cookie } });
+  }
+
+  it('lets an admin manage rooms that staff can list; isolated; non-admin blocked', async () => {
+    const a = await makeSchool('Room A', 'ra');
+    const b = await makeSchool('Room B', 'rb');
+
+    assert.equal((await createRoom(a.adminCookie, 'Lokaal 1')).statusCode, 201);
+    assert.equal((await listRooms(a.teacher.cookie)).json().length, 1);
+    assert.equal((await listRooms(b.adminCookie)).json().length, 0);
+    assert.equal((await createRoom(a.teacher.cookie, 'Nope')).statusCode, 403);
+  });
+
+  it('assigns a room to a lesson and rejects a room from another school', async () => {
+    const a = await makeSchool('Room C', 'rc');
+    const b = await makeSchool('Room D', 'rd');
+    const room = (await createRoom(a.adminCookie, 'Zaal')).json() as { id: string };
+    const foreign = (await createRoom(b.adminCookie, 'Vreemd')).json() as { id: string };
+
+    const create = await app.inject({
+      method: 'POST',
+      url: '/api/lessons',
+      headers: { cookie: a.teacher.cookie },
+      payload: { studentId: a.student.id, startsAt: soon(), durationMinutes: 30, roomId: room.id },
+    });
+    assert.equal(create.statusCode, 201, create.body);
+    assert.equal(create.json().room.id, room.id);
+
+    const bad = await app.inject({
+      method: 'POST',
+      url: '/api/lessons',
+      headers: { cookie: a.teacher.cookie },
+      payload: {
+        studentId: a.student.id,
+        startsAt: soon(),
+        durationMinutes: 30,
+        roomId: foreign.id,
+      },
+    });
+    assert.equal(bad.statusCode, 400);
+  });
+});

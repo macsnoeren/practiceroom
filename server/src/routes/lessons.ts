@@ -53,6 +53,11 @@ async function assertCanTeach(id: string, schoolId: string): Promise<void> {
   if (!user) throw badRequest('Geen geldige leraar gekozen');
 }
 
+async function assertRoomInSchool(id: string, schoolId: string): Promise<void> {
+  const room = await prisma.room.findFirst({ where: { id, schoolId } });
+  if (!room) throw badRequest('Onbekend lokaal');
+}
+
 export async function lessonRoutes(app: FastifyInstance): Promise<void> {
   // List lessons relevant to the caller (own school; scoped by role). Lessons
   // that fall within a school holiday are dropped from the schedule (they
@@ -99,6 +104,7 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
       if (!teacherId) throw badRequest('Kies een leraar');
       await assertCanTeach(teacherId, me.schoolId);
       await assertUserInSchool(input.studentId, me.schoolId, 'student');
+      if (input.roomId) await assertRoomInSchool(input.roomId, me.schoolId);
 
       // Weekly recurrence: plan the same lesson for several weeks, skipping any
       // week that falls in a school holiday.
@@ -131,6 +137,7 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
         title: input.title ?? null,
         durationMinutes: input.durationMinutes,
         seriesId,
+        roomId: input.roomId ?? null,
       };
 
       const first = await prisma.lesson.create({
@@ -158,6 +165,7 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
       if (!existing) throw notFound('Les niet gevonden');
       if (!canManageLesson(me, existing)) throw forbidden();
       if (input.studentId) await assertUserInSchool(input.studentId, me.schoolId, 'student');
+      if (input.roomId) await assertRoomInSchool(input.roomId, me.schoolId);
 
       const lesson = await prisma.lesson.update({
         where: { id },
@@ -168,6 +176,7 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
           durationMinutes: input.durationMinutes,
           status: input.status,
           notes: input.notes === undefined ? undefined : input.notes,
+          roomId: input.roomId === undefined ? undefined : input.roomId,
         },
         include: lessonListInclude,
       });
