@@ -197,6 +197,7 @@ export const UpdateLessonSchema = z.object({
   startsAt: z.string().datetime().optional(),
   durationMinutes: z.number().int().min(5).max(600).optional(),
   status: LessonStatusSchema.optional(),
+  notes: z.string().max(5000).nullable().optional(),
 });
 export type UpdateLessonInput = z.infer<typeof UpdateLessonSchema>;
 
@@ -209,7 +210,14 @@ export type SetLessonDevicesInput = z.infer<typeof SetLessonDevicesSchema>;
 export const CreateMaterialSchema = z
   .object({
     title: z.string().trim().min(1).max(160),
-    url: z.string().url().max(2000).optional(),
+    url: z
+      .string()
+      .url()
+      .max(2000)
+      .refine((u) => /^https?:\/\//i.test(u), {
+        message: 'Alleen http(s)-links zijn toegestaan',
+      })
+      .optional(),
     note: z.string().trim().max(2000).optional(),
   })
   .refine((m) => m.url !== undefined || m.note !== undefined, {
@@ -237,6 +245,7 @@ export const LessonDtoSchema = z.object({
   durationMinutes: z.number(),
   status: LessonStatusSchema,
   seriesId: z.string().nullable(),
+  notes: z.string().nullable(),
   createdAt: z.string(),
 });
 export type LessonDto = z.infer<typeof LessonDtoSchema>;

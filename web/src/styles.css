@@ -459,6 +459,7 @@ th {
   text-align: left;
   background: var(--surface);
   color: inherit;
+  text-decoration: none;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   margin-top: 0.5rem;

@@ -270,4 +270,76 @@ describe('lessons: planning, scoping and material', () => {
     });
     assert.equal(res.statusCode, 400);
   });
+
+  it('rejects a javascript: material URL', async () => {
+    const s = await makeSchool('Material XSS', 'mx');
+    const lesson = (
+      await app.inject({
+        method: 'POST',
+        url: '/api/lessons',
+        headers: { cookie: s.teacher.cookie },
+        payload: { studentId: s.student.id, startsAt: soon(), durationMinutes: 30 },
+      })
+    ).json();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/lessons/${lesson.id}/materials`,
+      headers: { cookie: s.teacher.cookie },
+      payload: { title: 'x', url: 'javascript:alert(document.cookie)' },
+    });
+    assert.equal(res.statusCode, 400);
+  });
+
+  it('stores lesson notes', async () => {
+    const s = await makeSchool('Notes', 'nt');
+    const lesson = (
+      await app.inject({
+        method: 'POST',
+        url: '/api/lessons',
+        headers: { cookie: s.teacher.cookie },
+        payload: { studentId: s.student.id, startsAt: soon(), durationMinutes: 30 },
+      })
+    ).json();
+
+    await app.inject({
+      method: 'PATCH',
+      url: `/api/lessons/${lesson.id}`,
+      headers: { cookie: s.teacher.cookie },
+      payload: { notes: 'Mooi gespeeld, let op de timing.' },
+    });
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/api/lessons/${lesson.id}`,
+      headers: { cookie: s.teacher.cookie },
+    });
+    assert.equal(detail.json().notes, 'Mooi gespeeld, let op de timing.');
+  });
+
+  it('cannot start recording once the lesson is finished', async () => {
+    const s = await makeSchool('Finished', 'fin');
+    const lesson = (
+      await app.inject({
+        method: 'POST',
+        url: '/api/lessons',
+        headers: { cookie: s.teacher.cookie },
+        payload: { studentId: s.student.id, startsAt: soon(), durationMinutes: 30 },
+      })
+    ).json();
+
+    await app.inject({
+      method: 'POST',
+      url: `/api/lessons/${lesson.id}/recording/finish`,
+      headers: { cookie: s.teacher.cookie },
+    });
+
+    // Status check runs before the camera/online checks, so any deviceId 400s.
+    const start = await app.inject({
+      method: 'POST',
+      url: `/api/lessons/${lesson.id}/recording/start`,
+      headers: { cookie: s.teacher.cookie },
+      payload: { deviceId: 'whatever' },
+    });
+    assert.equal(start.statusCode, 400);
+  });
 });

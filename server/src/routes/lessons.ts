@@ -167,6 +167,7 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
           startsAt: input.startsAt ? new Date(input.startsAt) : undefined,
           durationMinutes: input.durationMinutes,
           status: input.status,
+          notes: input.notes === undefined ? undefined : input.notes,
         },
         include: lessonListInclude,
       });
@@ -314,6 +315,10 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
       if (!lesson) throw notFound('Les niet gevonden');
       if (!canManageLesson(me, lesson)) throw forbidden();
 
+      // Once a lesson is finished it can no longer produce new recordings.
+      if (lesson.status === 'recorded' || lesson.status === 'ready') {
+        throw badRequest('Deze les is al afgerond');
+      }
       if (!lesson.devices.some((d) => d.deviceId === deviceId)) {
         throw badRequest('Deze camera hoort niet bij de les');
       }

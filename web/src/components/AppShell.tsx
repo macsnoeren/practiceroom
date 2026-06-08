@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { APP_NAME, type UserDto } from '@practiceroom/shared';
 import { LessonManagement } from './LessonManagement.js';
+import { LessonDashboard } from './LessonDashboard.js';
 import { DeviceManagement } from './DeviceManagement.js';
 import { UserManagement } from './UserManagement.js';
 import { StudentLessons } from './StudentLessons.js';
@@ -75,6 +76,14 @@ export function AppShell({ user, onLogout }: { user: UserDto; onLogout: () => vo
                   >
                     <LessonManagement isAdmin={isAdmin} />
                   </Page>
+                }
+              />
+              <Route
+                path="/lessons/:id"
+                element={
+                  <div className="page">
+                    <LessonDashboard />
+                  </div>
                 }
               />
               <Route

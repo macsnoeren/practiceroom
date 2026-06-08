@@ -1,24 +1,13 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import {
-  CreateLessonSchema,
-  CreateMaterialSchema,
-  type DeviceDto,
-  type LessonDetailDto,
-  type LessonDto,
-  type UserDto,
-} from '@practiceroom/shared';
+import { Link } from 'react-router-dom';
+import { CreateLessonSchema, type LessonDto, type UserDto } from '@practiceroom/shared';
 import { ApiError, api } from '../api.js';
-import { formatBytes, formatWhen } from '../format.js';
-import { usePresence } from '../usePresence.js';
-import { LessonPlayer } from './LessonPlayer.js';
-import { CompositePlayer } from './CompositePlayer.js';
+import { formatWhen } from '../format.js';
 
 export function LessonManagement({ isAdmin }: { isAdmin: boolean }) {
   const [lessons, setLessons] = useState<LessonDto[] | null>(null);
   const [students, setStudents] = useState<UserDto[]>([]);
   const [teachers, setTeachers] = useState<UserDto[]>([]);
-  const [devices, setDevices] = useState<DeviceDto[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refreshLessons = useCallback(async () => {
@@ -37,7 +26,6 @@ export function LessonManagement({ isAdmin }: { isAdmin: boolean }) {
       // Admins teach too, so they can be chosen as a lesson's teacher.
       setTeachers(users.filter((u) => u.role === 'teacher' || u.role === 'admin'));
     });
-    void api.listDevices().then(setDevices);
   }, [refreshLessons]);
 
   return (
@@ -58,11 +46,7 @@ export function LessonManagement({ isAdmin }: { isAdmin: boolean }) {
         <ul className="lesson-list">
           {lessons.map((l) => (
             <li key={l.id}>
-              <button
-                type="button"
-                className={`lesson-item${selectedId === l.id ? ' selected' : ''}`}
-                onClick={() => setSelectedId(selectedId === l.id ? null : l.id)}
-              >
+              <Link to={`/lessons/${l.id}`} className="lesson-item">
                 <span>
                   <strong>{l.title || 'Les'}</strong> — {l.student.name}
                   <div className="muted">
@@ -70,17 +54,7 @@ export function LessonManagement({ isAdmin }: { isAdmin: boolean }) {
                   </div>
                 </span>
                 <span className="tag">{l.status}</span>
-              </button>
-              {selectedId === l.id && (
-                <LessonDetail
-                  lessonId={l.id}
-                  devices={devices}
-                  onDeleted={() => {
-                    setSelectedId(null);
-                    void refreshLessons();
-                  }}
-                />
-              )}
+              </Link>
             </li>
           ))}
         </ul>
@@ -215,310 +189,5 @@ function LessonForm({
         {busy ? 'Bezig…' : repeat ? 'Reeks inplannen' : 'Les inplannen'}
       </button>
     </form>
-  );
-}
-
-function LessonDetail({
-  lessonId,
-  devices,
-  onDeleted,
-}: {
-  lessonId: string;
-  devices: DeviceDto[];
-  onDeleted: () => void;
-}) {
-  const [detail, setDetail] = useState<LessonDetailDto | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const { online } = usePresence();
-
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      setDetail(await api.getLesson(lessonId));
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Laden mislukt');
-    }
-  }, [lessonId]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  async function startSegment(deviceId: string) {
-    setError(null);
-    try {
-      await api.startRecording(lessonId, deviceId);
-      await load();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Opname starten mislukt');
-    }
-  }
-
-  async function stopSegment() {
-    setError(null);
-    try {
-      await api.stopRecording(lessonId);
-      await load();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Opname stoppen mislukt');
-    }
-  }
-
-  async function finishRecording() {
-    setError(null);
-    try {
-      await api.finishRecording(lessonId);
-      await load();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Afronden mislukt');
-    }
-  }
-
-  async function toggleDevice(deviceId: string, checked: boolean) {
-    if (!detail) return;
-    const current = new Set(detail.devices.map((d) => d.id));
-    if (checked) current.add(deviceId);
-    else current.delete(deviceId);
-    try {
-      setDetail(await api.setLessonDevices(lessonId, [...current]));
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Opslaan mislukt');
-    }
-  }
-
-  async function removeLesson(series = false) {
-    const msg = series ? 'De hele wekelijkse reeks verwijderen?' : 'Les verwijderen?';
-    if (!window.confirm(msg)) return;
-    try {
-      await api.deleteLesson(lessonId, series);
-      onDeleted();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Verwijderen mislukt');
-    }
-  }
-
-  if (error) return <p className="error">{error}</p>;
-  if (!detail) return <p className="muted">Laden…</p>;
-
-  return (
-    <div className="lesson-detail">
-      <h3>Camera's voor deze les</h3>
-      {devices.length === 0 && <p className="muted">Nog geen apparaten geregistreerd.</p>}
-      {devices.map((d) => (
-        <label key={d.id} className="checkbox">
-          <input
-            type="checkbox"
-            checked={detail.devices.some((x) => x.id === d.id)}
-            onChange={(e) => toggleDevice(d.id, e.target.checked)}
-          />
-          {d.name}
-          {online.has(d.id) && <span className="tag tag-ok">● online</span>}
-        </label>
-      ))}
-
-      <h3>Opname</h3>
-      <RecordingControls
-        detail={detail}
-        online={online}
-        onStart={startSegment}
-        onStop={stopSegment}
-        onFinish={finishRecording}
-        onRefresh={load}
-      />
-
-      <CompositePlayer lessonId={lessonId} composite={detail.composite} />
-
-      <LessonPlayer
-        recordings={detail.recordings}
-        deviceName={(id) => detail.devices.find((d) => d.id === id)?.name ?? 'Camera'}
-      />
-
-      <h3>Lesmateriaal</h3>
-      <MaterialList detail={detail} onChanged={load} />
-      <MaterialForm lessonId={lessonId} onAdded={load} />
-
-      <div className="lesson-actions">
-        <button type="button" className="linkbtn danger" onClick={() => removeLesson(false)}>
-          Les verwijderen
-        </button>
-        {detail.seriesId && (
-          <button type="button" className="linkbtn danger" onClick={() => removeLesson(true)}>
-            Hele reeks verwijderen
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function MaterialList({ detail, onChanged }: { detail: LessonDetailDto; onChanged: () => void }) {
-  if (detail.materials.length === 0) return <p className="muted">Nog geen materiaal.</p>;
-  return (
-    <ul className="material-list">
-      {detail.materials.map((m) => (
-        <li key={m.id}>
-          <div>
-            <strong>{m.title}</strong>
-            {m.url && (
-              <>
-                {' '}
-                <a href={m.url} target="_blank" rel="noreferrer">
-                  link
-                </a>
-              </>
-            )}
-            {m.note && <div className="muted">{m.note}</div>}
-          </div>
-          <button
-            type="button"
-            className="linkbtn danger"
-            onClick={async () => {
-              await api.deleteMaterial(detail.id, m.id);
-              onChanged();
-            }}
-          >
-            x
-          </button>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function MaterialForm({ lessonId, onAdded }: { lessonId: string; onAdded: () => void }) {
-  const [title, setTitle] = useState('');
-  const [url, setUrl] = useState('');
-  const [note, setNote] = useState('');
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    const parsed = CreateMaterialSchema.safeParse({
-      title,
-      url: url || undefined,
-      note: note || undefined,
-    });
-    if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? 'Controleer de invoer');
-      return;
-    }
-    try {
-      await api.addMaterial(lessonId, parsed.data);
-      setTitle('');
-      setUrl('');
-      setNote('');
-      onAdded();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Toevoegen mislukt');
-    }
-  }
-
-  return (
-    <form onSubmit={submit} className="material-form">
-      <input
-        placeholder="Titel"
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        aria-label="Titel"
-      />
-      <input
-        placeholder="Link (https://…)"
-        value={url}
-        onChange={(e) => setUrl(e.target.value)}
-        aria-label="Link"
-      />
-      <input
-        placeholder="Notitie"
-        value={note}
-        onChange={(e) => setNote(e.target.value)}
-        aria-label="Notitie"
-      />
-      {error && <p className="error">{error}</p>}
-      <button type="submit">Materiaal toevoegen</button>
-    </form>
-  );
-}
-
-function RecordingControls({
-  detail,
-  online,
-  onStart,
-  onStop,
-  onFinish,
-  onRefresh,
-}: {
-  detail: LessonDetailDto;
-  online: Set<string>;
-  onStart: (deviceId: string) => void;
-  onStop: () => void;
-  onFinish: () => void;
-  onRefresh: () => void;
-}) {
-  const activeDeviceId = detail.recordings.find((r) => r.status === 'recording')?.deviceId ?? null;
-  const deviceName = (id: string) => detail.devices.find((d) => d.id === id)?.name ?? 'Camera';
-
-  return (
-    <div>
-      <p className="muted">
-        Eén camera tegelijk. Start je een andere, dan stopt de vorige. Met “Les afronden” wordt er
-        één video van gemaakt.
-      </p>
-
-      {detail.devices.length === 0 && (
-        <p className="muted">Selecteer eerst camera’s voor deze les.</p>
-      )}
-
-      <div className="camera-controls">
-        {detail.devices.map((d) => {
-          const isOnline = online.has(d.id);
-          const isActive = activeDeviceId === d.id;
-          return (
-            <div key={d.id} className="camera-row">
-              <span>
-                {d.name}{' '}
-                {isActive ? (
-                  <span className="tag rec">● opname</span>
-                ) : isOnline ? (
-                  <span className="tag tag-ok">online</span>
-                ) : (
-                  <span className="tag">offline</span>
-                )}
-              </span>
-              <button type="button" onClick={() => onStart(d.id)} disabled={!isOnline || isActive}>
-                {activeDeviceId ? 'Wissel hierheen' : 'Start'}
-              </button>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="recording-buttons">
-        {activeDeviceId && (
-          <button type="button" className="secondary" onClick={onStop}>
-            Stop ({deviceName(activeDeviceId)})
-          </button>
-        )}
-        <button type="button" onClick={onFinish} disabled={detail.recordings.length === 0}>
-          Les afronden &amp; video maken
-        </button>
-        <button type="button" className="linkbtn" onClick={onRefresh}>
-          Vernieuwen
-        </button>
-      </div>
-
-      {detail.recordings.length > 0 && (
-        <ul className="material-list">
-          {detail.recordings.map((r, i) => (
-            <li key={r.id}>
-              <div>
-                Segment {i + 1}: {deviceName(r.deviceId)} <span className="tag">{r.status}</span>{' '}
-                {r.sizeBytes > 0 && <span className="muted">{formatBytes(r.sizeBytes)}</span>}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
   );
 }

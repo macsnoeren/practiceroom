@@ -91,6 +91,7 @@ model Lesson {
   durationMinutes Int
   status          String   @default("planned")
   seriesId        String? // links the lessons of one weekly-recurring series
+  notes           String? // free-text lesson notes by the teacher
   createdAt       DateTime @default(now())
 
   school     School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)

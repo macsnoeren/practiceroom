@@ -107,6 +107,7 @@ export function toLessonDto(lesson: LessonListRow): LessonDto {
     durationMinutes: lesson.durationMinutes,
     status: lesson.status as LessonStatus,
     seriesId: lesson.seriesId,
+    notes: lesson.notes,
     createdAt: lesson.createdAt.toISOString(),
   };
 }
