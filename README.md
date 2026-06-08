@@ -107,6 +107,10 @@ docker compose up -d --build
 - Dashboard op `http://<host>:8080`, camera-app op `http://<host>:8081`.
 - Services: `server` (API), `worker` (ffmpeg-samenvoegen), `web` + `camera`
   (nginx, serveren de SPA's en proxyen `/api` + `/socket.io` naar de server).
+- **Eén image, geen aparte ffmpeg-container**: server en worker draaien dezelfde
+  image en gebruiken de via npm meegeleverde ffmpeg (`@ffmpeg-installer`). De
+  image is daarom op `node:*-bookworm-slim` (glibc) gebaseerd; wil je toch een
+  systeem-ffmpeg, zet dan `FFMPEG_PATH` naar dat pad.
 - Data (SQLite + video's) staat in het `appdata`-volume; migraties draaien bij
   het opstarten van de server.
 - **Draai dit achter HTTPS** (cookies zijn standaard `Secure`). Voor een snelle

@@ -5,10 +5,13 @@
 # For a quick local HTTP try-out, set COOKIE_SECURE=false in .env.
 
 services:
+  # One image (with the npm-bundled ffmpeg) is built once here and reused by
+  # the worker — there is no separate ffmpeg container.
   server:
     build:
       context: .
       dockerfile: Dockerfile
+    image: practiceroom-app
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -23,9 +26,7 @@ services:
       - appdata:/data
 
   worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: practiceroom-app
     restart: unless-stopped
     command: ['node', 'server/dist/worker/index.js']
     environment:
