@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import {
   CreateLessonSchema,
@@ -12,6 +13,7 @@ import { prisma } from '../db.js';
 import { requireAuth, requireRole } from '../auth/plugin.js';
 import { badRequest, forbidden, notFound } from '../lib/errors.js';
 import { canManageLesson, canViewLesson } from '../lib/lesson-access.js';
+import { isWithinHolidays } from '../lib/dates.js';
 import {
   compositeResource,
   PLAYBACK_TTL_MS,
@@ -85,18 +87,47 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
       await assertUserInSchool(teacherId, me.schoolId, 'teacher');
       await assertUserInSchool(input.studentId, me.schoolId, 'student');
 
-      const lesson = await prisma.lesson.create({
-        data: {
-          schoolId: me.schoolId,
-          teacherId,
-          studentId: input.studentId,
-          title: input.title ?? null,
-          startsAt: new Date(input.startsAt),
-          durationMinutes: input.durationMinutes,
-        },
+      // Weekly recurrence: plan the same lesson for several weeks, skipping any
+      // week that falls in a school holiday.
+      const repeatWeeks = input.repeatWeeks ?? 1;
+      const base = new Date(input.startsAt);
+      let dates: Date[];
+      if (repeatWeeks <= 1) {
+        dates = [base];
+      } else {
+        const holidays = await prisma.holiday.findMany({
+          where: { schoolId: me.schoolId },
+          select: { startsOn: true, endsOn: true },
+        });
+        dates = [];
+        for (let week = 0; week < repeatWeeks; week++) {
+          const occurrence = new Date(base.getTime() + week * 7 * 24 * 60 * 60 * 1000);
+          if (!isWithinHolidays(occurrence, holidays)) dates.push(occurrence);
+        }
+      }
+      const [firstDate, ...restDates] = dates;
+      if (!firstDate) throw badRequest('Alle weken vallen in een vakantie');
+
+      const seriesId = dates.length > 1 ? randomUUID() : null;
+      const common = {
+        schoolId: me.schoolId,
+        teacherId,
+        studentId: input.studentId,
+        title: input.title ?? null,
+        durationMinutes: input.durationMinutes,
+        seriesId,
+      };
+
+      const first = await prisma.lesson.create({
+        data: { ...common, startsAt: firstDate },
         include: lessonListInclude,
       });
-      return reply.code(201).send(toLessonDto(lesson));
+      if (restDates.length > 0) {
+        await prisma.lesson.createMany({
+          data: restDates.map((startsAt) => ({ ...common, startsAt })),
+        });
+      }
+      return reply.code(201).send(toLessonDto(first));
     },
   );
 
@@ -134,10 +165,22 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const me = requireAuth(request);
       const { id } = request.params as IdParam;
+      const deleteSeries = (request.query as { series?: string }).series === 'true';
       const existing = await prisma.lesson.findFirst({ where: { id, schoolId: me.schoolId } });
       if (!existing) throw notFound('Les niet gevonden');
       if (!canManageLesson(me, existing)) throw forbidden();
-      await prisma.lesson.delete({ where: { id } });
+
+      if (deleteSeries && existing.seriesId) {
+        await prisma.lesson.deleteMany({
+          where: {
+            seriesId: existing.seriesId,
+            schoolId: me.schoolId,
+            ...(me.role === 'teacher' ? { teacherId: me.id } : {}),
+          },
+        });
+      } else {
+        await prisma.lesson.delete({ where: { id } });
+      }
       return reply.code(204).send();
     },
   );

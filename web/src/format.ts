@@ -8,6 +8,16 @@ export function formatWhen(iso: string): string {
   });
 }
 
+export function formatDateRange(startsOn: string, endsOn: string): string {
+  const f = (d: string) =>
+    new Date(`${d}T00:00:00`).toLocaleDateString('nl-NL', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  return startsOn === endsOn ? f(startsOn) : `${f(startsOn)} – ${f(endsOn)}`;
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;

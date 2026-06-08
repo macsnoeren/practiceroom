@@ -104,6 +104,8 @@ function LessonForm({
   const [title, setTitle] = useState('');
   const [startsAt, setStartsAt] = useState('');
   const [duration, setDuration] = useState(30);
+  const [repeat, setRepeat] = useState(false);
+  const [weeks, setWeeks] = useState(12);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -117,6 +119,7 @@ function LessonForm({
       title: title || undefined,
       startsAt: startsAt ? new Date(startsAt).toISOString() : '',
       durationMinutes: duration,
+      repeatWeeks: repeat ? weeks : undefined,
     };
     const parsed = CreateLessonSchema.safeParse(input);
     if (!parsed.success || (isAdmin && !teacherId)) {
@@ -186,9 +189,28 @@ function LessonForm({
         onChange={(e) => setDuration(Number(e.target.value))}
       />
 
+      <label className="checkbox" style={{ marginTop: '1rem' }}>
+        <input type="checkbox" checked={repeat} onChange={(e) => setRepeat(e.target.checked)} />
+        Wekelijks herhalen
+      </label>
+      {repeat && (
+        <>
+          <label htmlFor="lf-weeks">Aantal weken</label>
+          <input
+            id="lf-weeks"
+            type="number"
+            min={1}
+            max={52}
+            value={weeks}
+            onChange={(e) => setWeeks(Number(e.target.value))}
+          />
+          <p className="muted">Vakantieweken worden automatisch overgeslagen.</p>
+        </>
+      )}
+
       {error && <p className="error">{error}</p>}
       <button type="submit" disabled={busy}>
-        {busy ? 'Bezig…' : 'Les inplannen'}
+        {busy ? 'Bezig…' : repeat ? 'Reeks inplannen' : 'Les inplannen'}
       </button>
     </form>
   );
@@ -262,10 +284,11 @@ function LessonDetail({
     }
   }
 
-  async function removeLesson() {
-    if (!window.confirm('Les verwijderen?')) return;
+  async function removeLesson(series = false) {
+    const msg = series ? 'De hele wekelijkse reeks verwijderen?' : 'Les verwijderen?';
+    if (!window.confirm(msg)) return;
     try {
-      await api.deleteLesson(lessonId);
+      await api.deleteLesson(lessonId, series);
       onDeleted();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Verwijderen mislukt');
@@ -313,9 +336,14 @@ function LessonDetail({
       <MaterialForm lessonId={lessonId} onAdded={load} />
 
       <div className="lesson-actions">
-        <button type="button" className="linkbtn danger" onClick={removeLesson}>
+        <button type="button" className="linkbtn danger" onClick={() => removeLesson(false)}>
           Les verwijderen
         </button>
+        {detail.seriesId && (
+          <button type="button" className="linkbtn danger" onClick={() => removeLesson(true)}>
+            Hele reeks verwijderen
+          </button>
+        )}
       </div>
     </div>
   );

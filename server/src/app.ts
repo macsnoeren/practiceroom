@@ -11,6 +11,7 @@ import { authRoutes } from './routes/auth.js';
 import { userRoutes } from './routes/users.js';
 import { deviceRoutes } from './routes/devices.js';
 import { lessonRoutes } from './routes/lessons.js';
+import { holidayRoutes } from './routes/holidays.js';
 import { recordingRoutes } from './routes/recordings.js';
 import { setupRealtime } from './realtime/io.js';
 
@@ -64,6 +65,7 @@ export async function buildApp() {
   await app.register(userRoutes);
   await app.register(deviceRoutes);
   await app.register(lessonRoutes);
+  await app.register(holidayRoutes);
   await app.register(recordingRoutes);
 
   return app;

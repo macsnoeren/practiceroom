@@ -3,6 +3,7 @@ import {
   CreateDeviceResultSchema,
   DeviceDtoSchema,
   CompositeVideoDtoSchema,
+  HolidayDtoSchema,
   LessonDetailDtoSchema,
   LessonDtoSchema,
   MaterialDtoSchema,
@@ -11,6 +12,7 @@ import {
   RecordingDtoSchema,
   SchoolDtoSchema,
   UserDtoSchema,
+  type CreateHolidayInput,
   type CreateLessonInput,
   type CreateMaterialInput,
   type CreateUserInput,
@@ -123,7 +125,8 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(input),
     }),
-  deleteLesson: (id: string) => requestVoid(`/api/lessons/${id}`, { method: 'DELETE' }),
+  deleteLesson: (id: string, series = false) =>
+    requestVoid(`/api/lessons/${id}${series ? '?series=true' : ''}`, { method: 'DELETE' }),
   setLessonDevices: (id: string, deviceIds: string[]) =>
     request(`/api/lessons/${id}/devices`, LessonDetailDtoSchema, {
       method: 'PUT',
@@ -154,4 +157,9 @@ export const api = {
     request(`/api/recordings/${recordingId}/playback-url`, PlaybackUrlSchema),
   getCompositePlaybackUrl: (lessonId: string) =>
     request(`/api/lessons/${lessonId}/composite/playback-url`, PlaybackUrlSchema),
+
+  listHolidays: () => request('/api/holidays', z.array(HolidayDtoSchema)),
+  createHoliday: (input: CreateHolidayInput) =>
+    request('/api/holidays', HolidayDtoSchema, { method: 'POST', body: JSON.stringify(input) }),
+  deleteHoliday: (id: string) => requestVoid(`/api/holidays/${id}`, { method: 'DELETE' }),
 };

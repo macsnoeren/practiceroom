@@ -17,9 +17,25 @@ model School {
   name      String
   createdAt DateTime @default(now())
 
-  users   User[]
-  devices Device[]
-  lessons Lesson[]
+  users    User[]
+  devices  Device[]
+  lessons  Lesson[]
+  holidays Holiday[]
+}
+
+/// A school holiday/break period. Recurring lessons skip weeks that fall in a
+/// holiday. Students see holidays alongside their planning.
+model Holiday {
+  id        String   @id @default(cuid())
+  schoolId  String
+  name      String
+  startsOn  DateTime
+  endsOn    DateTime
+  createdAt DateTime @default(now())
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId])
 }
 
 /// A person within a school. Role is stored as a string because SQLite has no
@@ -74,6 +90,7 @@ model Lesson {
   startsAt        DateTime
   durationMinutes Int
   status          String   @default("planned")
+  seriesId        String? // links the lessons of one weekly-recurring series
   createdAt       DateTime @default(now())
 
   school     School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
@@ -87,6 +104,7 @@ model Lesson {
   @@index([schoolId])
   @@index([teacherId])
   @@index([studentId])
+  @@index([seriesId])
 }
 
 /// The single combined video for a lesson: its recording segments concatenated

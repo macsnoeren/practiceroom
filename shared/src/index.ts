@@ -153,15 +153,43 @@ export type PersonMini = z.infer<typeof PersonMiniSchema>;
 const DeviceMiniSchema = z.object({ id: z.string(), name: z.string() });
 export type DeviceMini = z.infer<typeof DeviceMiniSchema>;
 
-/** Create a lesson. A teacher implicitly teaches it; an admin must pick one. */
+/** Create a lesson. A teacher implicitly teaches it; an admin must pick one.
+ * `repeatWeeks` > 1 plans the same lesson weekly for that many weeks (holiday
+ * weeks are skipped). */
 export const CreateLessonSchema = z.object({
   studentId: z.string().min(1),
   teacherId: z.string().min(1).optional(),
   title: z.string().trim().max(160).optional(),
   startsAt: z.string().datetime(),
   durationMinutes: z.number().int().min(5).max(600),
+  repeatWeeks: z.number().int().min(1).max(52).optional(),
 });
 export type CreateLessonInput = z.infer<typeof CreateLessonSchema>;
+
+const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Gebruik een datum (JJJJ-MM-DD)');
+
+/** A school holiday/break period (date-only, inclusive). */
+export const CreateHolidaySchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    startsOn: dateOnly,
+    endsOn: dateOnly,
+  })
+  .refine((h) => h.endsOn >= h.startsOn, {
+    message: 'De einddatum mag niet vóór de startdatum liggen',
+    path: ['endsOn'],
+  });
+export type CreateHolidayInput = z.infer<typeof CreateHolidaySchema>;
+
+export const HolidayDtoSchema = z.object({
+  id: z.string(),
+  schoolId: z.string(),
+  name: z.string(),
+  startsOn: z.string(),
+  endsOn: z.string(),
+  createdAt: z.string(),
+});
+export type HolidayDto = z.infer<typeof HolidayDtoSchema>;
 
 export const UpdateLessonSchema = z.object({
   studentId: z.string().min(1).optional(),
@@ -208,6 +236,7 @@ export const LessonDtoSchema = z.object({
   startsAt: z.string(),
   durationMinutes: z.number(),
   status: LessonStatusSchema,
+  seriesId: z.string().nullable(),
   createdAt: z.string(),
 });
 export type LessonDto = z.infer<typeof LessonDtoSchema>;

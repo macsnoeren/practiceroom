@@ -1,6 +1,7 @@
 import type {
   CompositeVideo,
   Device,
+  Holiday,
   Material,
   Prisma,
   Recording,
@@ -11,6 +12,7 @@ import type {
   CompositeStatus,
   CompositeVideoDto,
   DeviceDto,
+  HolidayDto,
   LessonDetailDto,
   LessonDto,
   LessonStatus,
@@ -21,6 +23,11 @@ import type {
   SchoolDto,
   UserDto,
 } from '@practiceroom/shared';
+
+/** Format a Date as a date-only string (YYYY-MM-DD, UTC). */
+function toDateOnly(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
 
 /** Map a database user to the client-facing DTO. Never leaks the password hash. */
 export function toUserDto(user: User): UserDto {
@@ -99,7 +106,19 @@ export function toLessonDto(lesson: LessonListRow): LessonDto {
     startsAt: lesson.startsAt.toISOString(),
     durationMinutes: lesson.durationMinutes,
     status: lesson.status as LessonStatus,
+    seriesId: lesson.seriesId,
     createdAt: lesson.createdAt.toISOString(),
+  };
+}
+
+export function toHolidayDto(holiday: Holiday): HolidayDto {
+  return {
+    id: holiday.id,
+    schoolId: holiday.schoolId,
+    name: holiday.name,
+    startsOn: toDateOnly(holiday.startsOn),
+    endsOn: toDateOnly(holiday.endsOn),
+    createdAt: holiday.createdAt.toISOString(),
   };
 }
 

@@ -5,6 +5,7 @@ import { LessonManagement } from './LessonManagement.js';
 import { DeviceManagement } from './DeviceManagement.js';
 import { UserManagement } from './UserManagement.js';
 import { StudentLessons } from './StudentLessons.js';
+import { HolidayManagement } from './HolidayManagement.js';
 
 const ROLE_LABEL: Record<UserDto['role'], string> = {
   admin: 'Beheerder',
@@ -47,6 +48,9 @@ export function AppShell({ user, onLogout }: { user: UserDto; onLogout: () => vo
             <NavLink to="/devices" className={navClass}>
               <span className="ico">🎥</span> Camera&rsquo;s
             </NavLink>
+            <NavLink to="/holidays" className={navClass}>
+              <span className="ico">🏖️</span> Vakanties
+            </NavLink>
             <NavLink to="/users" className={navClass}>
               <span className="ico">👥</span> Gebruikers
             </NavLink>
@@ -81,6 +85,17 @@ export function AppShell({ user, onLogout }: { user: UserDto; onLogout: () => vo
                     subtitle="Registreer en koppel opnameapparaten."
                   >
                     <DeviceManagement />
+                  </Page>
+                }
+              />
+              <Route
+                path="/holidays"
+                element={
+                  <Page
+                    title="Vakanties"
+                    subtitle="Voer schoolvakanties in; herhalende lessen slaan deze over."
+                  >
+                    <HolidayManagement />
                   </Page>
                 }
               />

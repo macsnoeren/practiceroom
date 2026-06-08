@@ -131,6 +131,14 @@ lessen, een student ziet/leest alleen zijn eigen lessen.
 - `PUT /api/lessons/:id/devices` — camera's selecteren (alleen eigen-school-apparaten)
 - `POST/DELETE /api/lessons/:id/materials[/:materialId]` — lesmateriaal
 
+### Herhaling & vakanties
+
+- Bij het plannen kun je een les **wekelijks herhalen** (`repeatWeeks`); elke week
+  wordt een eigen les, gekoppeld als reeks (`seriesId`). `DELETE /api/lessons/:id?series=true`
+  verwijdert de hele reeks.
+- **Vakanties** (`/api/holidays`, beheerder): herhalende lessen slaan vakantieweken
+  automatisch over. Studenten zien de vakanties bij hun planning.
+
 ### Realtime (fase 3)
 
 WebSocket op dezelfde server (`/socket.io`). De camera-app verbindt met haar
