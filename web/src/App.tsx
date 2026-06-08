@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react';
+import { BrowserRouter } from 'react-router-dom';
 import { APP_NAME, type UserDto } from '@practiceroom/shared';
 import { ApiError, api } from './api.js';
 import { AuthScreen } from './components/AuthScreen.js';
-import { UserManagement } from './components/UserManagement.js';
-import { DeviceManagement } from './components/DeviceManagement.js';
-import { LessonManagement } from './components/LessonManagement.js';
-import { StudentLessons } from './components/StudentLessons.js';
+import { AppShell } from './components/AppShell.js';
 
 type AuthState = { kind: 'loading' } | { kind: 'authenticated'; user: UserDto } | { kind: 'anon' };
 
@@ -17,7 +15,6 @@ export function App() {
       .me()
       .then((user) => setAuth({ kind: 'authenticated', user }))
       .catch((err: unknown) => {
-        // 401 simply means not logged in; anything else we also treat as anon.
         if (!(err instanceof ApiError)) console.error(err);
         setAuth({ kind: 'anon' });
       });
@@ -28,42 +25,31 @@ export function App() {
     setAuth({ kind: 'anon' });
   }
 
-  return (
-    <div className="container">
-      <h1>{APP_NAME}</h1>
+  if (auth.kind === 'loading') {
+    return (
+      <div className="auth-page">
+        <p className="muted">Laden…</p>
+      </div>
+    );
+  }
 
-      {auth.kind === 'loading' && <p className="muted">Laden…</p>}
-
-      {auth.kind === 'anon' && (
-        <AuthScreen onAuthenticated={(user) => setAuth({ kind: 'authenticated', user })} />
-      )}
-
-      {auth.kind === 'authenticated' && (
-        <>
-          <div className="card">
-            <div className="row">
-              <div>
-                Ingelogd als <strong>{auth.user.name}</strong>{' '}
-                <span className="tag">{auth.user.role}</span>
-                <div className="muted">{auth.user.email}</div>
-              </div>
-              <button type="button" className="secondary" onClick={logout}>
-                Uitloggen
-              </button>
-            </div>
+  if (auth.kind === 'anon') {
+    return (
+      <div className="auth-page">
+        <div className="auth-card">
+          <div className="auth-brand">
+            <span className="brand-mark">P</span>
+            {APP_NAME}
           </div>
+          <AuthScreen onAuthenticated={(user) => setAuth({ kind: 'authenticated', user })} />
+        </div>
+      </div>
+    );
+  }
 
-          {auth.user.role === 'student' ? (
-            <StudentLessons />
-          ) : (
-            <>
-              <LessonManagement isAdmin={auth.user.role === 'admin'} />
-              <DeviceManagement />
-              <UserManagement canCreate={auth.user.role === 'admin'} />
-            </>
-          )}
-        </>
-      )}
-    </div>
+  return (
+    <BrowserRouter>
+      <AppShell user={auth.user} onLogout={logout} />
+    </BrowserRouter>
   );
 }

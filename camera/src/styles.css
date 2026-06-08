@@ -1,9 +1,25 @@
 :root {
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --border: #e5e7eb;
+  --border-strong: #d1d5db;
+  --text: #111827;
+  --muted: #6b7280;
+  --primary: #4f46e5;
+  --primary-hover: #4338ca;
+  --primary-soft: #eef2ff;
+  --danger: #dc2626;
+  --radius: 10px;
+  --radius-sm: 7px;
+
   font-family:
     system-ui,
     -apple-system,
+    'Segoe UI',
+    Roboto,
     sans-serif;
-  color: #1a1a1a;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
 }
 
 * {
@@ -12,7 +28,7 @@
 
 body {
   margin: 0;
-  background: #f5f6f8;
+  background: var(--bg);
 }
 
 .container {
@@ -21,74 +37,107 @@ body {
   padding: 0 1rem;
 }
 
-.card {
-  background: #fff;
-  border: 1px solid #e3e5e9;
-  border-radius: 10px;
-  padding: 1.5rem;
-  margin-bottom: 1.25rem;
+h1 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.4rem;
 }
 
-h1 {
-  margin-top: 0;
+h1::before {
+  content: 'P';
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: linear-gradient(135deg, var(--primary), #7c6df2);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 0.95rem;
+  font-weight: 700;
 }
 
 h2 {
   margin-top: 0;
-  font-size: 1.15rem;
+  font-size: 1.1rem;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+  padding: 1.5rem;
+  margin-bottom: 1.25rem;
 }
 
 label {
   display: block;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   font-weight: 600;
-  margin: 0.75rem 0 0.25rem;
+  margin: 0.85rem 0 0.3rem;
 }
 
 input,
 select {
   width: 100%;
-  padding: 0.55rem 0.65rem;
-  border: 1px solid #c9ccd2;
-  border-radius: 7px;
-  font-size: 1rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 0.95rem;
+}
+
+input:focus,
+select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
 }
 
 input#code {
-  font-size: 1.5rem;
-  letter-spacing: 0.3rem;
+  font-size: 1.6rem;
+  letter-spacing: 0.35rem;
   text-transform: uppercase;
+  text-align: center;
 }
 
 button {
   margin-top: 1rem;
   padding: 0.55rem 1rem;
-  border: 0;
-  border-radius: 7px;
-  background: #2f6df6;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--primary);
   color: #fff;
-  font-size: 1rem;
+  font: inherit;
+  font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
 }
 
+button:hover {
+  background: var(--primary-hover);
+}
+
 button.secondary {
-  background: #eaecef;
-  color: #1a1a1a;
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border-strong);
 }
 
 button:disabled {
-  opacity: 0.6;
+  opacity: 0.55;
   cursor: default;
 }
 
 .error {
-  color: #c0392b;
+  color: var(--danger);
   margin-top: 0.5rem;
+  font-size: 0.9rem;
 }
 
 .muted {
-  color: #6b7280;
+  color: var(--muted);
   font-size: 0.9rem;
 }
 
@@ -101,14 +150,14 @@ button:disabled {
 
 .preview {
   width: 100%;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: #000;
   aspect-ratio: 16 / 9;
 }
 
 .card.recording {
-  border-color: #c0392b;
-  background: #fdecea;
-  color: #c0392b;
+  border-color: var(--danger);
+  background: #fef2f2;
+  color: var(--danger);
   font-weight: 600;
 }
