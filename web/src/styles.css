@@ -1,28 +1,62 @@
 :root {
-  --bg: #f4f5f7;
-  --surface: #ffffff;
-  --surface-2: #f8f9fb;
-  --border: #e5e7eb;
-  --border-strong: #d1d5db;
-  --text: #111827;
-  --muted: #6b7280;
-  --primary: #4f46e5;
-  --primary-hover: #4338ca;
-  --primary-soft: #eef2ff;
-  --danger: #dc2626;
-  --danger-soft: #fef2f2;
+  /* Palette */
+  --primary: #5b54e6; /* indigo / violet */
+  --primary-hover: #4b44d4;
+  --primary-soft: #ecebfd;
+  --secondary: #2563eb; /* blue */
+  --accent: #14b8a6; /* turquoise */
   --success: #16a34a;
-  --success-soft: #ecfdf3;
-  --warning-soft: #fff7ed;
-  --radius: 10px;
-  --radius-sm: 7px;
-  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
-  --shadow: 0 4px 16px rgba(16, 24, 40, 0.08);
-  --font: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --success-soft: #e8f8ee;
+  --warning: #ea580c;
+  --warning-soft: #fff3e9;
+  --danger: #dc2626;
+  --danger-soft: #fdecec;
 
+  /* Neutrals / surfaces */
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f3f4f6;
+  --border: #e6e8ec;
+  --border-strong: #d4d8df;
+  --text: #0f1222;
+  --muted: #6b7280;
+
+  --radius: 14px;
+  --radius-sm: 9px;
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow: 0 8px 30px rgba(16, 24, 40, 0.1);
+  --font: 'Inter', 'SF Pro Text', Geist, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  color-scheme: light;
   font-family: var(--font);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
+}
+
+:root[data-theme='dark'] {
+  --primary: #8b85f5;
+  --primary-hover: #a59ffb;
+  --primary-soft: #211f3a;
+  --secondary: #60a5fa;
+  --accent: #2dd4bf;
+  --success: #34d399;
+  --success-soft: #10271c;
+  --warning: #fb923c;
+  --warning-soft: #2a1c10;
+  --danger: #f87171;
+  --danger-soft: #2a1416;
+
+  --bg: #0b0c11;
+  --surface: #15171f;
+  --surface-2: #1b1e27;
+  --border: #272b36;
+  --border-strong: #363b49;
+  --text: #e7e9ee;
+  --muted: #9aa1ad;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+  color-scheme: dark;
 }
 
 * {
@@ -117,6 +151,24 @@ a {
   display: block;
 }
 
+.icon-btn {
+  margin-top: 0;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  background: var(--surface-2);
+}
+
 .sidebar {
   background: var(--surface);
   border-right: 1px solid var(--border);
@@ -196,7 +248,8 @@ a {
   display: grid;
   place-items: center;
   padding: 1.5rem;
-  background: radial-gradient(1200px 500px at 50% -10%, #e8eaff 0%, transparent 60%), var(--bg);
+  background:
+    radial-gradient(1200px 500px at 50% -10%, var(--primary-soft) 0%, transparent 60%), var(--bg);
 }
 
 .auth-card {
@@ -362,13 +415,13 @@ button.secondary:disabled {
 
 .tag-ok {
   background: var(--success-soft);
-  border-color: #bbf7d0;
+  border-color: transparent;
   color: var(--success);
 }
 
 .tag.rec {
   background: var(--danger-soft);
-  border-color: #fecaca;
+  border-color: transparent;
   color: var(--danger);
 }
 
@@ -604,6 +657,16 @@ th {
   gap: 0.5rem;
 }
 
+.cal-day .cal-col {
+  min-height: 12rem;
+}
+
+.cal-empty {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: 0.35rem;
+}
+
 .cal-col {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -691,7 +754,7 @@ th {
 }
 
 .lesson-chip:hover {
-  background: #e2e6ff;
+  box-shadow: inset 0 0 0 1px var(--primary);
 }
 
 .lesson-chip.small {

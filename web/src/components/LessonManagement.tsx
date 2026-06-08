@@ -10,12 +10,54 @@ import { ApiError, api } from '../api.js';
 import { addDays, addMonths, isHolidayDay, monthGrid, weekDays, ymd } from '../calendar.js';
 import { Modal } from './Modal.js';
 
-type View = 'week' | 'month';
+type View = 'day' | 'week' | 'month';
 
 const DAY_NAMES = ['ma', 'di', 'wo', 'do', 'vr', 'za', 'zo'];
 
 function timeOf(iso: string): string {
   return new Date(iso).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
+}
+
+function DayColumn({
+  day,
+  holidays,
+  lessons,
+  onPlan,
+}: {
+  day: Date;
+  holidays: HolidayDto[];
+  lessons: LessonDto[];
+  onPlan: (dayKey: string) => void;
+}) {
+  const key = ymd(day);
+  const holiday = isHolidayDay(key, holidays);
+  return (
+    <div className={`cal-col${holiday ? ' holiday' : ''}`}>
+      <div className="cal-col-head">
+        <span>
+          {DAY_NAMES[(day.getDay() + 6) % 7]} {day.getDate()}
+        </span>
+        {!holiday && (
+          <button
+            type="button"
+            className="linkbtn"
+            onClick={() => onPlan(key)}
+            aria-label="Plan op deze dag"
+          >
+            +
+          </button>
+        )}
+      </div>
+      {holiday && <div className="muted holiday-label">Vakantie</div>}
+      {lessons.map((l) => (
+        <Link key={l.id} to={`/lessons/${l.id}`} className="lesson-chip">
+          <strong>{timeOf(l.startsAt)}</strong> {l.title || 'Les'}
+          <div className="muted">{l.student.name}</div>
+        </Link>
+      ))}
+      {!holiday && lessons.length === 0 && <div className="cal-empty">Geen lessen</div>}
+    </div>
+  );
 }
 
 export function LessonManagement({ isAdmin }: { isAdmin: boolean }) {
@@ -64,19 +106,26 @@ export function LessonManagement({ isAdmin }: { isAdmin: boolean }) {
     return map;
   }, [lessons, studentId]);
 
-  const days = view === 'week' ? weekDays(anchor) : monthGrid(anchor);
+  const days = view === 'day' ? [anchor] : view === 'week' ? weekDays(anchor) : monthGrid(anchor);
 
   function goPrev() {
-    setAnchor(view === 'week' ? addDays(anchor, -7) : addMonths(anchor, -1));
+    setAnchor(view === 'month' ? addMonths(anchor, -1) : addDays(anchor, view === 'day' ? -1 : -7));
   }
   function goNext() {
-    setAnchor(view === 'week' ? addDays(anchor, 7) : addMonths(anchor, 1));
+    setAnchor(view === 'month' ? addMonths(anchor, 1) : addDays(anchor, view === 'day' ? 1 : 7));
   }
 
   const periodLabel =
-    view === 'week'
-      ? `${days[0]!.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })} – ${days[6]!.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' })}`
-      : anchor.toLocaleDateString('nl-NL', { month: 'long', year: 'numeric' });
+    view === 'day'
+      ? anchor.toLocaleDateString('nl-NL', {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        })
+      : view === 'week'
+        ? `${days[0]!.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })} – ${days[6]!.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' })}`
+        : anchor.toLocaleDateString('nl-NL', { month: 'long', year: 'numeric' });
 
   return (
     <div>
@@ -101,6 +150,13 @@ export function LessonManagement({ isAdmin }: { isAdmin: boolean }) {
 
           <div className="toolbar-right">
             <div className="viewtoggle">
+              <button
+                type="button"
+                className={view === 'day' ? '' : 'secondary'}
+                onClick={() => setView('day')}
+              >
+                Dag
+              </button>
               <button
                 type="button"
                 className={view === 'week' ? '' : 'secondary'}
@@ -133,38 +189,17 @@ export function LessonManagement({ isAdmin }: { isAdmin: boolean }) {
 
         {error && <p className="error">{error}</p>}
 
-        {view === 'week' ? (
-          <div className="cal-week">
-            {days.map((day) => {
-              const key = ymd(day);
-              const holiday = isHolidayDay(key, holidays);
-              return (
-                <div key={key} className={`cal-col${holiday ? ' holiday' : ''}`}>
-                  <div className="cal-col-head">
-                    <span>
-                      {DAY_NAMES[(day.getDay() + 6) % 7]} {day.getDate()}
-                    </span>
-                    {!holiday && (
-                      <button
-                        type="button"
-                        className="linkbtn"
-                        onClick={() => setPlanDate(`${key}T09:00`)}
-                        aria-label="Plan op deze dag"
-                      >
-                        +
-                      </button>
-                    )}
-                  </div>
-                  {holiday && <div className="muted holiday-label">Vakantie</div>}
-                  {(byDay.get(key) ?? []).map((l) => (
-                    <Link key={l.id} to={`/lessons/${l.id}`} className="lesson-chip">
-                      <strong>{timeOf(l.startsAt)}</strong> {l.title || 'Les'}
-                      <div className="muted">{l.student.name}</div>
-                    </Link>
-                  ))}
-                </div>
-              );
-            })}
+        {view !== 'month' ? (
+          <div className={view === 'day' ? 'cal-day' : 'cal-week'}>
+            {days.map((day) => (
+              <DayColumn
+                key={ymd(day)}
+                day={day}
+                holidays={holidays}
+                lessons={byDay.get(ymd(day)) ?? []}
+                onPlan={(k) => setPlanDate(`${k}T09:00`)}
+              />
+            ))}
           </div>
         ) : (
           <div className="cal-month">

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { APP_NAME, type UserDto } from '@practiceroom/shared';
+import { useTheme } from '../useTheme.js';
 import { LessonManagement } from './LessonManagement.js';
 import { LessonDashboard } from './LessonDashboard.js';
 import { DeviceManagement } from './DeviceManagement.js';
@@ -20,6 +21,7 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
 export function AppShell({ user, onLogout }: { user: UserDto; onLogout: () => void }) {
   const isStaff = user.role !== 'student';
   const isAdmin = user.role === 'admin';
+  const { theme, toggle } = useTheme();
 
   return (
     <div className="app-shell">
@@ -30,6 +32,15 @@ export function AppShell({ user, onLogout }: { user: UserDto; onLogout: () => vo
         </div>
         <div className="topbar-spacer" />
         <div className="topbar-user">
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={toggle}
+            aria-label={theme === 'dark' ? 'Licht thema' : 'Donker thema'}
+            title={theme === 'dark' ? 'Licht thema' : 'Donker thema'}
+          >
+            {theme === 'dark' ? '☀️' : '🌙'}
+          </button>
           <div className="who">
             <strong>{user.name}</strong>
             <small>{ROLE_LABEL[user.role]}</small>

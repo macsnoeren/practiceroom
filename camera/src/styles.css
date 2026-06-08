@@ -1,18 +1,22 @@
 :root {
-  --bg: #f4f5f7;
+  --bg: #f6f7f9;
   --surface: #ffffff;
-  --border: #e5e7eb;
-  --border-strong: #d1d5db;
-  --text: #111827;
+  --border: #e6e8ec;
+  --border-strong: #d4d8df;
+  --text: #0f1222;
   --muted: #6b7280;
-  --primary: #4f46e5;
-  --primary-hover: #4338ca;
-  --primary-soft: #eef2ff;
+  --primary: #5b54e6;
+  --primary-hover: #4b44d4;
+  --primary-soft: #ecebfd;
   --danger: #dc2626;
-  --radius: 10px;
-  --radius-sm: 7px;
+  --radius: 14px;
+  --radius-sm: 9px;
 
+  color-scheme: light;
   font-family:
+    'Inter',
+    'SF Pro Text',
+    Geist,
     system-ui,
     -apple-system,
     'Segoe UI',
@@ -20,6 +24,22 @@
     sans-serif;
   color: var(--text);
   -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b0c11;
+    --surface: #15171f;
+    --border: #272b36;
+    --border-strong: #363b49;
+    --text: #e7e9ee;
+    --muted: #9aa1ad;
+    --primary: #8b85f5;
+    --primary-hover: #a59ffb;
+    --primary-soft: #211f3a;
+    --danger: #f87171;
+    color-scheme: dark;
+  }
 }
 
 * {
@@ -157,7 +177,7 @@ button:disabled {
 
 .card.recording {
   border-color: var(--danger);
-  background: #fef2f2;
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
   color: var(--danger);
   font-weight: 600;
 }
