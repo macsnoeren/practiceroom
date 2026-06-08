@@ -12,6 +12,8 @@ const EnvSchema = z.object({
   DATABASE_URL: z.string().min(1).default('file:./dev.db'),
   CORS_ORIGIN: z.string().min(1).default('http://localhost:5173'),
   STORAGE_DIR: z.string().min(1).default('./storage'),
+  // Secret used to sign playback URLs. Override with a strong value in production.
+  SIGNING_SECRET: z.string().min(1).default('dev-insecure-signing-secret-change-me'),
 });
 
 const parsed = EnvSchema.safeParse(process.env);

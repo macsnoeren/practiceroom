@@ -10,6 +10,7 @@ import {
 import { ApiError, api } from '../api.js';
 import { formatBytes, formatWhen } from '../format.js';
 import { usePresence } from '../usePresence.js';
+import { LessonPlayer } from './LessonPlayer.js';
 
 export function LessonManagement({ isAdmin }: { isAdmin: boolean }) {
   const [lessons, setLessons] = useState<LessonDto[] | null>(null);
@@ -286,6 +287,11 @@ function LessonDetail({
         onStart={startRecording}
         onStop={stopRecording}
         onRefresh={load}
+      />
+
+      <LessonPlayer
+        recordings={detail.recordings}
+        deviceName={(id) => detail.devices.find((d) => d.id === id)?.name ?? 'Camera'}
       />
 
       <h3>Lesmateriaal</h3>

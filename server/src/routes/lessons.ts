@@ -8,8 +8,9 @@ import {
   type Role,
 } from '@practiceroom/shared';
 import { prisma } from '../db.js';
-import { requireAuth, requireRole, type AuthUser } from '../auth/plugin.js';
+import { requireAuth, requireRole } from '../auth/plugin.js';
 import { badRequest, forbidden, notFound } from '../lib/errors.js';
+import { canManageLesson, canViewLesson } from '../lib/lesson-access.js';
 import {
   lessonDetailInclude,
   lessonListInclude,
@@ -25,16 +26,6 @@ interface IdParam {
 interface MaterialParams {
   id: string;
   materialId: string;
-}
-
-/** Admin manages any lesson in the school; a teacher only their own. */
-function canManage(user: AuthUser, lesson: { teacherId: string }): boolean {
-  return user.role === 'admin' || (user.role === 'teacher' && lesson.teacherId === user.id);
-}
-
-/** Admin, the lesson's teacher, or the lesson's student may view it. */
-function canView(user: AuthUser, lesson: { teacherId: string; studentId: string }): boolean {
-  return user.role === 'admin' || lesson.teacherId === user.id || lesson.studentId === user.id;
 }
 
 async function assertUserInSchool(id: string, schoolId: string, role: Role): Promise<void> {
@@ -67,7 +58,7 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
       include: lessonDetailInclude,
     });
     if (!lesson) throw notFound('Les niet gevonden');
-    if (!canView(me, lesson)) throw forbidden();
+    if (!canViewLesson(me, lesson)) throw forbidden();
     return toLessonDetailDto(lesson);
   });
 
@@ -109,7 +100,7 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
 
       const existing = await prisma.lesson.findFirst({ where: { id, schoolId: me.schoolId } });
       if (!existing) throw notFound('Les niet gevonden');
-      if (!canManage(me, existing)) throw forbidden();
+      if (!canManageLesson(me, existing)) throw forbidden();
       if (input.studentId) await assertUserInSchool(input.studentId, me.schoolId, 'student');
 
       const lesson = await prisma.lesson.update({
@@ -135,7 +126,7 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
       const { id } = request.params as IdParam;
       const existing = await prisma.lesson.findFirst({ where: { id, schoolId: me.schoolId } });
       if (!existing) throw notFound('Les niet gevonden');
-      if (!canManage(me, existing)) throw forbidden();
+      if (!canManageLesson(me, existing)) throw forbidden();
       await prisma.lesson.delete({ where: { id } });
       return reply.code(204).send();
     },
@@ -153,7 +144,7 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
 
       const lesson = await prisma.lesson.findFirst({ where: { id, schoolId: me.schoolId } });
       if (!lesson) throw notFound('Les niet gevonden');
-      if (!canManage(me, lesson)) throw forbidden();
+      if (!canManageLesson(me, lesson)) throw forbidden();
 
       if (unique.length > 0) {
         const count = await prisma.device.count({
@@ -192,7 +183,7 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
 
       const lesson = await prisma.lesson.findFirst({ where: { id, schoolId: me.schoolId } });
       if (!lesson) throw notFound('Les niet gevonden');
-      if (!canManage(me, lesson)) throw forbidden();
+      if (!canManageLesson(me, lesson)) throw forbidden();
 
       const material = await prisma.material.create({
         data: {
@@ -215,7 +206,7 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
 
       const lesson = await prisma.lesson.findFirst({ where: { id, schoolId: me.schoolId } });
       if (!lesson) throw notFound('Les niet gevonden');
-      if (!canManage(me, lesson)) throw forbidden();
+      if (!canManageLesson(me, lesson)) throw forbidden();
 
       const result = await prisma.material.deleteMany({ where: { id: materialId, lessonId: id } });
       if (result.count === 0) throw notFound('Materiaal niet gevonden');
@@ -237,7 +228,7 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
         include: { devices: true },
       });
       if (!lesson) throw notFound('Les niet gevonden');
-      if (!canManage(me, lesson)) throw forbidden();
+      if (!canManageLesson(me, lesson)) throw forbidden();
 
       const onlineDeviceIds = lesson.devices
         .map((d) => d.deviceId)
@@ -282,7 +273,7 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
 
       const lesson = await prisma.lesson.findFirst({ where: { id, schoolId: me.schoolId } });
       if (!lesson) throw notFound('Les niet gevonden');
-      if (!canManage(me, lesson)) throw forbidden();
+      if (!canManageLesson(me, lesson)) throw forbidden();
 
       const active = await prisma.recording.findMany({
         where: { lessonId: id, status: 'recording' },

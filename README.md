@@ -83,9 +83,19 @@ npm run test -w server   # integratietests: tenant-isolatie, auth, device-pairin
   hervatbare chunks; de server plakt ze in volgorde tot één `.webm` per camera.
   Status `planned → recording → recorded` + tests (chunk-upload, hervatten,
   bestandsvalidatie, auth). ✅
+- **Fase 6** — terugkijken: ondertekende, vervallende afspeel-URL's + streaming
+  met Range-support; videospeler in dashboard en bij de student, met schakelen
+  tussen camerahoeken. Een gekopieerde link werkt niet voor een niet-deelnemer en
+  verloopt. + tests. ✅
 
-Volgende fases: terugkijken (speler + ondertekende URL's), samengevoegde
-rastervideo, beveiliging/uitrol. Zie het projectplan.
+Volgende fases: samengevoegde rastervideo, beveiliging/uitrol. Zie het projectplan.
+
+### Terugkijken (fase 6)
+
+- `GET /api/recordings/:id/playback-url` — (deelnemer) korte, ondertekende URL.
+- `GET /api/recordings/:id/stream?expires&sig` — streamt de video; vereist een
+  geldige (niet-verlopen) handtekening én dat de ingelogde gebruiker de les mag
+  zien. Ondersteunt `Range` voor zoeken. `SIGNING_SECRET` ondertekent de URL's.
 
 ### Opnemen (fase 5)
 

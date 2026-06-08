@@ -245,3 +245,20 @@ td {
   border-top: 1px solid #eee;
   padding-top: 0.75rem;
 }
+
+.angles {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.linkbtn.selected {
+  text-decoration: underline;
+}
+
+.player {
+  width: 100%;
+  border-radius: 8px;
+  background: #000;
+  aspect-ratio: 16 / 9;
+}

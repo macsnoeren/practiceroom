@@ -235,6 +235,13 @@ export const RecordingResumeSchema = z.object({
 });
 export type RecordingResume = z.infer<typeof RecordingResumeSchema>;
 
+/** A short-lived, signed URL to stream a recording back. */
+export const PlaybackUrlSchema = z.object({
+  url: z.string(),
+  expiresAt: z.string(),
+});
+export type PlaybackUrl = z.infer<typeof PlaybackUrlSchema>;
+
 export const LessonDetailDtoSchema = LessonDtoSchema.extend({
   devices: z.array(DeviceMiniSchema),
   materials: z.array(MaterialDtoSchema),

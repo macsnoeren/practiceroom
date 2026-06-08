@@ -7,6 +7,7 @@ import { io as ioClient, type Socket } from 'socket.io-client';
 import { SOCKET_EVENTS } from '@practiceroom/shared';
 import { prisma } from '../src/db.js';
 import { recordingPath } from '../src/lib/storage.js';
+import { signPlayback } from '../src/lib/signing.js';
 import { createUser, login, registerSchool, setupTestApp } from './helpers.js';
 
 let app: FastifyInstance;
@@ -226,5 +227,111 @@ describe('recordings: chunked upload and lifecycle', () => {
     });
     assert.equal(stop.statusCode, 200);
     assert.equal((await stopMsg).recordingId, received.recordingId);
+  });
+});
+
+async function completedRecording(
+  deviceToken: string,
+  lessonId: string,
+  deviceId: string,
+  bytes: Buffer,
+) {
+  const recording = await prisma.recording.create({
+    data: { lessonId, deviceId, status: 'recording' },
+  });
+  await uploadChunk(recording.id, deviceToken, 0, bytes);
+  await app.inject({
+    method: 'POST',
+    url: `/api/recordings/${recording.id}/complete`,
+    headers: { authorization: `Bearer ${deviceToken}` },
+  });
+  return recording.id;
+}
+
+describe('recordings: signed playback', () => {
+  it('streams a completed recording to a participant via a signed URL', async () => {
+    const s = await lessonSetup('play');
+    const studentCookie = await login(app, 'play-s@example.com');
+    const bytes = Buffer.from('VIDEO-DATA-0123456789');
+    const recId = await completedRecording(s.device.token, s.lessonId, s.device.id, bytes);
+
+    const urlRes = await app.inject({
+      method: 'GET',
+      url: `/api/recordings/${recId}/playback-url`,
+      headers: { cookie: studentCookie },
+    });
+    assert.equal(urlRes.statusCode, 200);
+    const url = urlRes.json().url as string;
+
+    const full = await app.inject({ method: 'GET', url, headers: { cookie: studentCookie } });
+    assert.equal(full.statusCode, 200);
+    assert.deepEqual(full.rawPayload, bytes);
+
+    // Range request returns just the requested slice.
+    const ranged = await app.inject({
+      method: 'GET',
+      url,
+      headers: { cookie: studentCookie, range: 'bytes=0-4' },
+    });
+    assert.equal(ranged.statusCode, 206);
+    assert.equal(ranged.headers['content-range'], `bytes 0-4/${bytes.length}`);
+    assert.deepEqual(ranged.rawPayload, bytes.subarray(0, 5));
+  });
+
+  it('blocks a copied link for a non-participant and rejects bad/expired signatures', async () => {
+    const s = await lessonSetup('play2');
+    // Another student in the SAME school, not part of this lesson.
+    const outsider = await createUser(app, s.adminCookie, {
+      name: 'Other',
+      email: 'play2-outsider@example.com',
+      role: 'student',
+    });
+    const outsiderCookie = await login(app, outsider.email);
+
+    const recId = await completedRecording(
+      s.device.token,
+      s.lessonId,
+      s.device.id,
+      Buffer.from('secret-video'),
+    );
+    const url = (
+      await app.inject({
+        method: 'GET',
+        url: `/api/recordings/${recId}/playback-url`,
+        headers: { cookie: s.teacherCookie },
+      })
+    ).json().url as string;
+
+    // A non-participant cannot even get a URL...
+    const denied = await app.inject({
+      method: 'GET',
+      url: `/api/recordings/${recId}/playback-url`,
+      headers: { cookie: outsiderCookie },
+    });
+    assert.equal(denied.statusCode, 403);
+
+    // ...and a copied (valid) link does not work for them either.
+    const copied = await app.inject({ method: 'GET', url, headers: { cookie: outsiderCookie } });
+    assert.equal(copied.statusCode, 403);
+
+    // Anonymous (no session) is unauthorized even with a valid signature.
+    assert.equal((await app.inject({ method: 'GET', url })).statusCode, 401);
+
+    // Tampered signature -> forbidden, even for the teacher.
+    const tampered = url.replace(/sig=.+$/, 'sig=deadbeef');
+    assert.equal(
+      (await app.inject({ method: 'GET', url: tampered, headers: { cookie: s.teacherCookie } }))
+        .statusCode,
+      403,
+    );
+
+    // Expired signature -> forbidden.
+    const past = Date.now() - 1000;
+    const expiredUrl = `/api/recordings/${recId}/stream?expires=${past}&sig=${signPlayback(recId, past)}`;
+    assert.equal(
+      (await app.inject({ method: 'GET', url: expiredUrl, headers: { cookie: s.teacherCookie } }))
+        .statusCode,
+      403,
+    );
   });
 });

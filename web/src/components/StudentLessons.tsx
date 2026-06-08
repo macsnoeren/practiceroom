@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { type LessonDetailDto, type LessonDto } from '@practiceroom/shared';
 import { ApiError, api } from '../api.js';
 import { formatWhen } from '../format.js';
+import { LessonPlayer } from './LessonPlayer.js';
 
 export function StudentLessons() {
   const [lessons, setLessons] = useState<LessonDto[] | null>(null);
@@ -63,8 +64,18 @@ function StudentLessonDetail({ lessonId }: { lessonId: string }) {
   if (error) return <p className="error">{error}</p>;
   if (!detail) return <p className="muted">Laden…</p>;
 
+  const hasRecording = detail.recordings.some((r) => r.status === 'completed');
+
   return (
     <div className="lesson-detail">
+      <LessonPlayer
+        recordings={detail.recordings}
+        deviceName={(id) => detail.devices.find((d) => d.id === id)?.name ?? 'Camera'}
+      />
+      {!hasRecording && (
+        <p className="muted">Na de les verschijnt hier de opname om terug te kijken.</p>
+      )}
+
       <h3>Lesmateriaal</h3>
       {detail.materials.length === 0 && <p className="muted">Nog geen materiaal.</p>}
       {detail.materials.length > 0 && (
@@ -86,14 +97,6 @@ function StudentLessonDetail({ lessonId }: { lessonId: string }) {
             </li>
           ))}
         </ul>
-      )}
-
-      {detail.status === 'ready' ? (
-        <p className="muted">De opname van deze les komt hier beschikbaar (latere fase).</p>
-      ) : (
-        <p className="muted">
-          Na de les verschijnt hier de opname om terug te kijken (latere fase).
-        </p>
       )}
     </div>
   );

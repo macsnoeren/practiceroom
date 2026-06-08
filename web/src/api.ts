@@ -6,6 +6,7 @@ import {
   LessonDtoSchema,
   MaterialDtoSchema,
   PairingCodeResultSchema,
+  PlaybackUrlSchema,
   RecordingDtoSchema,
   SchoolDtoSchema,
   UserDtoSchema,
@@ -143,4 +144,6 @@ export const api = {
     request(`/api/lessons/${lessonId}/recording/stop`, z.object({ stopped: z.number() }), {
       method: 'POST',
     }),
+  getPlaybackUrl: (recordingId: string) =>
+    request(`/api/recordings/${recordingId}/playback-url`, PlaybackUrlSchema),
 };
