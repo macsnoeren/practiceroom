@@ -12,7 +12,7 @@ function Shell({ children }: { children: ReactNode }) {
     <div className="auth-page">
       <div className="auth-card">
         <div className="auth-brand">
-          <span className="brand-mark">P</span>
+          <img className="brand-mark" src="/practice-room-logo.png" alt="" />
           {APP_NAME}
         </div>
         <div className="card">{children}</div>

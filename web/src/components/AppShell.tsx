@@ -38,7 +38,7 @@ export function AppShell({
     <div className="app-shell">
       <header className="topbar">
         <div className="brand">
-          <span className="brand-mark">P</span>
+          <img className="brand-mark" src="/practice-room-logo.png" alt="" />
           {APP_NAME}
         </div>
         <div className="topbar-spacer" />
