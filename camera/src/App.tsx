@@ -3,6 +3,7 @@ import { PairDeviceSchema } from '@practiceroom/shared';
 import { ApiError, cameraApi, clearToken, getToken, setToken } from './api.js';
 import { CameraPreview } from './components/CameraPreview.js';
 import { useDeviceSocket } from './useDeviceSocket.js';
+import { useFramePublisher } from './useFramePublisher.js';
 import { useRecorder } from './useRecorder.js';
 
 type State =
@@ -54,9 +55,10 @@ function PairedView({
   device: { id: string; name: string };
   onUnpair: () => void;
 }) {
-  const { connected, activeRecording } = useDeviceSocket();
+  const { connected, activeRecording, sendFrame } = useDeviceSocket();
   const [stream, setStream] = useState<MediaStream | null>(null);
   const recorderState = useRecorder(stream, activeRecording);
+  useFramePublisher(stream, sendFrame, connected);
 
   const isRecording = recorderState === 'recording';
 

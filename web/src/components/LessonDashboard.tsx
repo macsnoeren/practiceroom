@@ -16,7 +16,7 @@ import { LessonPlayer } from './LessonPlayer.js';
 export function LessonDashboard() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
-  const { online } = usePresence();
+  const { online, frames } = usePresence({ collectFrames: true });
 
   const [detail, setDetail] = useState<LessonDetailDto | null>(null);
   const [devices, setDevices] = useState<DeviceDto[]>([]);
@@ -117,84 +117,111 @@ export function LessonDashboard() {
         {error && <p className="error">{error}</p>}
       </div>
 
-      <div className="card">
-        <h2>Camera&rsquo;s</h2>
-        {devices.length === 0 && <p className="muted">Nog geen apparaten geregistreerd.</p>}
-        <p className="muted">Kies welke camera&rsquo;s bij deze les horen:</p>
-        {devices.map((d) => (
-          <label key={d.id} className="checkbox">
-            <input
-              type="checkbox"
-              checked={detail.devices.some((x) => x.id === d.id)}
-              onChange={(e) => toggleDevice(d.id, e.target.checked)}
-            />
-            {d.name}
-            {online.has(d.id) && <span className="tag tag-ok">● online</span>}
-          </label>
-        ))}
+      <div className="card control-room">
+        <div className="row">
+          <h2>Regiekamer</h2>
+          {activeDeviceId ? (
+            <span className="tag rec">● opname loopt</span>
+          ) : (
+            <span className="tag">standby</span>
+          )}
+        </div>
 
-        <h3>Opname</h3>
         {finished ? (
           <p className="muted">Deze les is afgerond — opnemen is niet meer mogelijk.</p>
         ) : (
-          <>
-            <p className="muted">
-              Eén camera tegelijk. Klik je een andere camera, dan gaat de opname over naar die
-              camera. Met &ldquo;Les afronden&rdquo; maak je er één video van.
-            </p>
-            {detail.devices.length === 0 && (
-              <p className="muted">Selecteer hierboven eerst camera&rsquo;s.</p>
-            )}
-            <div className="camera-controls">
-              {detail.devices.map((d) => {
-                const isOnline = online.has(d.id);
-                const isActive = activeDeviceId === d.id;
-                return (
-                  <div key={d.id} className="camera-row">
-                    <span>
-                      {d.name}{' '}
-                      {isActive ? (
-                        <span className="tag rec">● opname</span>
-                      ) : isOnline ? (
-                        <span className="tag tag-ok">online</span>
-                      ) : (
-                        <span className="tag">offline</span>
-                      )}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => run(() => api.startRecording(id, d.id), 'Starten mislukt')}
-                      disabled={!isOnline || isActive}
-                    >
-                      {activeDeviceId ? 'Wissel hierheen' : 'Start'}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="recording-buttons">
-              {activeDeviceId && (
+          <p className="muted">
+            Klik op een camera om de opname te starten. Klik nog eens om te stoppen, of klik een
+            andere camera om over te schakelen. Eén camera tegelijk; &ldquo;Les afronden&rdquo;
+            maakt er één video van.
+          </p>
+        )}
+
+        {detail.devices.length === 0 ? (
+          <p className="muted">
+            Nog geen camera&rsquo;s aan deze les gekoppeld — kies ze hieronder.
+          </p>
+        ) : (
+          <div className="cam-grid">
+            {detail.devices.map((d) => {
+              const isOnline = online.has(d.id);
+              const isActive = activeDeviceId === d.id;
+              const frame = frames[d.id];
+              const clickable = !finished && (isOnline || isActive);
+              return (
                 <button
+                  key={d.id}
                   type="button"
-                  className="secondary"
-                  onClick={() => run(() => api.stopRecording(id), 'Stoppen mislukt')}
+                  className={`cam-tile${isActive ? ' recording' : ''}${isOnline ? '' : ' offline'}`}
+                  disabled={!clickable}
+                  onClick={() =>
+                    isActive
+                      ? run(() => api.stopRecording(id), 'Stoppen mislukt')
+                      : run(() => api.startRecording(id, d.id), 'Starten mislukt')
+                  }
                 >
-                  Stop ({deviceName(activeDeviceId)})
+                  {frame ? (
+                    <img className="cam-tile-img" src={frame} alt={`Beeld van ${d.name}`} />
+                  ) : (
+                    <div className="cam-tile-img placeholder">
+                      {isOnline ? 'Wachten op beeld…' : 'Offline'}
+                    </div>
+                  )}
+                  <div className="cam-tile-bar">
+                    <span className="cam-tile-name">{d.name}</span>
+                    {isActive ? (
+                      <span className="tag rec">● REC</span>
+                    ) : isOnline ? (
+                      <span className="tag tag-ok">● online</span>
+                    ) : (
+                      <span className="tag">offline</span>
+                    )}
+                  </div>
                 </button>
-              )}
+              );
+            })}
+          </div>
+        )}
+
+        {!finished && (
+          <div className="recording-buttons">
+            {activeDeviceId && (
               <button
                 type="button"
-                onClick={() => run(() => api.finishRecording(id), 'Afronden mislukt')}
-                disabled={detail.recordings.length === 0}
+                className="secondary"
+                onClick={() => run(() => api.stopRecording(id), 'Stoppen mislukt')}
               >
-                Les afronden &amp; video maken
+                Stop ({deviceName(activeDeviceId)})
               </button>
-              <button type="button" className="linkbtn" onClick={() => void load()}>
-                Vernieuwen
-              </button>
-            </div>
-          </>
+            )}
+            <button
+              type="button"
+              onClick={() => run(() => api.finishRecording(id), 'Afronden mislukt')}
+              disabled={detail.recordings.length === 0}
+            >
+              Les afronden &amp; video maken
+            </button>
+            <button type="button" className="linkbtn" onClick={() => void load()}>
+              Vernieuwen
+            </button>
+          </div>
         )}
+
+        <details className="cam-picker">
+          <summary>Camera&rsquo;s kiezen</summary>
+          {devices.length === 0 && <p className="muted">Nog geen apparaten geregistreerd.</p>}
+          {devices.map((d) => (
+            <label key={d.id} className="checkbox">
+              <input
+                type="checkbox"
+                checked={detail.devices.some((x) => x.id === d.id)}
+                onChange={(e) => toggleDevice(d.id, e.target.checked)}
+              />
+              {d.name}
+              {online.has(d.id) && <span className="tag tag-ok">● online</span>}
+            </label>
+          ))}
+        </details>
 
         {detail.recordings.length > 0 && (
           <ul className="material-list">
@@ -221,8 +248,9 @@ export function LessonDashboard() {
       </div>
 
       <div className="card">
-        <h2>Aantekeningen</h2>
+        <h2>Aantekeningen &amp; tags</h2>
         <NotesEditor lessonId={id} initialNotes={detail.notes} />
+        <TagsPanel detail={detail} onChanged={load} />
       </div>
 
       <div className="card">
@@ -283,6 +311,83 @@ function NotesEditor({
       </button>
       {status === 'saved' && <span className="success"> Opgeslagen.</span>}
       {status === 'error' && <span className="error"> Opslaan mislukt.</span>}
+    </div>
+  );
+}
+
+function formatTagTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('nl-NL', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
+/** Timeline markers placed during the lesson, kept for later review/editing. */
+function TagsPanel({ detail, onChanged }: { detail: LessonDetailDto; onChanged: () => void }) {
+  const [label, setLabel] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function addTag(e: FormEvent) {
+    e.preventDefault();
+    const trimmed = label.trim();
+    if (!trimmed) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.addTag(detail.id, trimmed);
+      setLabel('');
+      onChanged();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Tag toevoegen mislukt');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="tags-panel">
+      <h3>Tags (tijdstippen)</h3>
+      <p className="muted">
+        Markeer momenten tijdens de les. Het tijdstip wordt vastgelegd; later bruikbaar om in de
+        video te knippen.
+      </p>
+      <form onSubmit={addTag} className="tag-form">
+        <input
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder="bijv. mooi stuk, fout in maat 12…"
+          aria-label="Tag"
+        />
+        <button type="submit" disabled={busy || !label.trim()}>
+          + Tag nu
+        </button>
+      </form>
+      {error && <p className="error">{error}</p>}
+      {detail.tags.length === 0 ? (
+        <p className="muted">Nog geen tags.</p>
+      ) : (
+        <ul className="tag-list">
+          {detail.tags.map((t) => (
+            <li key={t.id}>
+              <span className="tag-time">{formatTagTime(t.at)}</span>
+              <span className="tag-label">{t.label}</span>
+              <button
+                type="button"
+                className="linkbtn danger"
+                aria-label="Tag verwijderen"
+                onClick={async () => {
+                  await api.deleteTag(detail.id, t.id);
+                  onChanged();
+                }}
+              >
+                x
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

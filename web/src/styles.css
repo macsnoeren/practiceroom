@@ -970,3 +970,126 @@ th {
   margin: 0;
   flex: 0 0 auto;
 }
+
+/* ------------------------------------------------- control room (regiekamer) */
+
+.cam-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.85rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.cam-tile {
+  position: relative;
+  margin: 0;
+  padding: 0;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  background: #0b0d16;
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 0.15s,
+    transform 0.1s;
+}
+
+.cam-tile:hover:not(:disabled) {
+  border-color: var(--primary);
+}
+
+.cam-tile:active:not(:disabled) {
+  transform: scale(0.99);
+}
+
+.cam-tile:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.cam-tile.recording {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+.cam-tile-img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: #0b0d16;
+}
+
+.cam-tile-img.placeholder {
+  display: grid;
+  place-items: center;
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
+.cam-tile-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  background: var(--surface);
+}
+
+.cam-tile-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.cam-picker {
+  margin-top: 0.5rem;
+}
+
+.cam-picker summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+/* ------------------------------------------------- tags */
+
+.tag-form {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.tag-form input {
+  flex: 1;
+  margin: 0;
+}
+
+.tag-form button {
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.tag-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+}
+
+.tag-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.35rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.tag-time {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.tag-label {
+  flex: 1;
+}

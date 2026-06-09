@@ -6,6 +6,7 @@ import {
   HolidayDtoSchema,
   LessonDetailDtoSchema,
   LessonDtoSchema,
+  LessonTagDtoSchema,
   MaterialDtoSchema,
   PairingCodeResultSchema,
   PlaybackUrlSchema,
@@ -182,6 +183,13 @@ export const api = {
     }),
   deleteMaterial: (lessonId: string, materialId: string) =>
     requestVoid(`/api/lessons/${lessonId}/materials/${materialId}`, { method: 'DELETE' }),
+  addTag: (lessonId: string, label: string) =>
+    request(`/api/lessons/${lessonId}/tags`, LessonTagDtoSchema, {
+      method: 'POST',
+      body: JSON.stringify({ label }),
+    }),
+  deleteTag: (lessonId: string, tagId: string) =>
+    requestVoid(`/api/lessons/${lessonId}/tags/${tagId}`, { method: 'DELETE' }),
 
   startRecording: (lessonId: string, deviceId: string) =>
     request(`/api/lessons/${lessonId}/recording/start`, RecordingDtoSchema, {

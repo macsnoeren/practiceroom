@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import {
   CreateLessonSchema,
   CreateMaterialSchema,
+  CreateTagSchema,
   SetLessonDevicesSchema,
   SOCKET_EVENTS,
   StartRecordingInputSchema,
@@ -28,6 +29,7 @@ import {
   toCompositeVideoDto,
   toLessonDetailDto,
   toLessonDto,
+  toLessonTagDto,
   toMaterialDto,
   toRecordingDto,
 } from '../lib/dto.js';
@@ -38,6 +40,10 @@ interface IdParam {
 interface MaterialParams {
   id: string;
   materialId: string;
+}
+interface TagParams {
+  id: string;
+  tagId: string;
 }
 
 async function assertUserInSchool(id: string, schoolId: string, role: Role): Promise<void> {
@@ -288,6 +294,41 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
 
       const result = await prisma.material.deleteMany({ where: { id: materialId, lessonId: id } });
       if (result.count === 0) throw notFound('Materiaal niet gevonden');
+      return reply.code(204).send();
+    },
+  );
+
+  // Place a timeline marker on a lesson (e.g. while it is being recorded).
+  app.post(
+    '/api/lessons/:id/tags',
+    { preHandler: requireRole('admin', 'teacher') },
+    async (request, reply) => {
+      const me = requireAuth(request);
+      const { id } = request.params as IdParam;
+      const input = CreateTagSchema.parse(request.body);
+
+      const lesson = await prisma.lesson.findFirst({ where: { id, schoolId: me.schoolId } });
+      if (!lesson) throw notFound('Les niet gevonden');
+      if (!canManageLesson(me, lesson)) throw forbidden();
+
+      const tag = await prisma.lessonTag.create({ data: { lessonId: id, label: input.label } });
+      return reply.code(201).send(toLessonTagDto(tag));
+    },
+  );
+
+  app.delete(
+    '/api/lessons/:id/tags/:tagId',
+    { preHandler: requireRole('admin', 'teacher') },
+    async (request, reply) => {
+      const me = requireAuth(request);
+      const { id, tagId } = request.params as TagParams;
+
+      const lesson = await prisma.lesson.findFirst({ where: { id, schoolId: me.schoolId } });
+      if (!lesson) throw notFound('Les niet gevonden');
+      if (!canManageLesson(me, lesson)) throw forbidden();
+
+      const result = await prisma.lessonTag.deleteMany({ where: { id: tagId, lessonId: id } });
+      if (result.count === 0) throw notFound('Tag niet gevonden');
       return reply.code(204).send();
     },
   );

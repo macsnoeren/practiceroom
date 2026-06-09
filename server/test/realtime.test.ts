@@ -137,4 +137,25 @@ describe('realtime: presence and command routing', () => {
     const snapshot = await snapshotPromise;
     assert.ok(snapshot.devices.some((d) => d.deviceId === device.id));
   });
+
+  it('relays a camera preview snapshot to staff (and rejects a non-image)', async () => {
+    const a = await registerSchool(app, 'RT Frame', 'rt-frame@example.com');
+    const device = await createPairedDevice(a.cookie, 'Cam Frame');
+
+    const staff = connectStaff(a.cookie);
+    await waitConnect(staff);
+    const cam = connectDevice(device.token);
+    await waitConnect(cam);
+
+    const framePromise = waitEvent<{ deviceId: string; dataUrl: string }>(
+      staff,
+      SOCKET_EVENTS.cameraFrame,
+    );
+    // A bogus non-image payload must be dropped, the real one relayed.
+    cam.emit(SOCKET_EVENTS.cameraFrame, { dataUrl: 'javascript:alert(1)' });
+    cam.emit(SOCKET_EVENTS.cameraFrame, { dataUrl: 'data:image/jpeg;base64,AAAA' });
+    const frame = await framePromise;
+    assert.equal(frame.deviceId, device.id);
+    assert.equal(frame.dataUrl, 'data:image/jpeg;base64,AAAA');
+  });
 });

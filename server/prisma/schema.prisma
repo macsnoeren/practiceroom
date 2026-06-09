@@ -137,6 +137,7 @@ model Lesson {
   devices    LessonDevice[]
   materials  Material[]
   recordings Recording[]
+  tags       LessonTag[]
   composite  CompositeVideo?
 
   @@index([schoolId])
@@ -193,6 +194,21 @@ model LessonDevice {
 
   @@id([lessonId, deviceId])
   @@index([deviceId])
+}
+
+/// A timeline marker placed during a lesson ("hier ging het mis", "mooi stuk").
+/// `at` is the wall-clock moment it was placed; a future editing tool can map it
+/// onto the combined video's timeline.
+model LessonTag {
+  id        String   @id @default(cuid())
+  lessonId  String
+  label     String
+  at        DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@index([lessonId])
 }
 
 /// Teaching material attached to a lesson (a link and/or a note for now).

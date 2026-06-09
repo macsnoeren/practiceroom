@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { io } from 'socket.io-client';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { io, type Socket } from 'socket.io-client';
 import {
   SOCKET_EVENTS,
   StartRecordingMsgSchema,
@@ -15,17 +15,20 @@ export interface ActiveRecording {
 /**
  * Connects this camera to the realtime channel using its device token and
  * tracks the active recording command from staff. Reports its state back so
- * the dashboard can show it.
+ * the dashboard can show it, and exposes `sendFrame` to publish preview
+ * snapshots.
  */
 export function useDeviceSocket() {
   const [connected, setConnected] = useState(false);
   const [activeRecording, setActiveRecording] = useState<ActiveRecording | null>(null);
+  const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
     const token = getToken();
     if (!token) return;
 
     const socket = io({ auth: { deviceToken: token } });
+    socketRef.current = socket;
 
     socket.on('connect', () => {
       setConnected(true);
@@ -47,9 +50,14 @@ export function useDeviceSocket() {
     });
 
     return () => {
+      socketRef.current = null;
       socket.close();
     };
   }, []);
 
-  return { connected, activeRecording };
+  const sendFrame = useCallback((dataUrl: string) => {
+    socketRef.current?.emit(SOCKET_EVENTS.cameraFrame, { dataUrl });
+  }, []);
+
+  return { connected, activeRecording, sendFrame };
 }

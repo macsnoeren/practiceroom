@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { Server, type Socket } from 'socket.io';
 import {
+  CameraFrameInputSchema,
   DeviceStatusSchema,
   SOCKET_EVENTS,
   type OnlineDevice,
@@ -159,6 +160,16 @@ export function setupRealtime(app: FastifyInstance): void {
         deviceId: data.deviceId,
         state: parsed.data.state,
         message: parsed.data.message,
+      });
+    });
+
+    // Relay a preview snapshot to the school's staff (never stored).
+    socket.on(SOCKET_EVENTS.cameraFrame, (raw: unknown) => {
+      const parsed = CameraFrameInputSchema.safeParse(raw);
+      if (!parsed.success) return;
+      io.to(schoolRoom(data.schoolId)).emit(SOCKET_EVENTS.cameraFrame, {
+        deviceId: data.deviceId,
+        dataUrl: parsed.data.dataUrl,
       });
     });
 

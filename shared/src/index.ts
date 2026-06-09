@@ -319,6 +319,21 @@ export const MaterialDtoSchema = z.object({
 });
 export type MaterialDto = z.infer<typeof MaterialDtoSchema>;
 
+/** A timeline marker placed during a lesson (for later review/editing). */
+export const CreateTagSchema = z.object({
+  label: z.string().trim().min(1).max(120),
+});
+export type CreateTagInput = z.infer<typeof CreateTagSchema>;
+
+export const LessonTagDtoSchema = z.object({
+  id: z.string(),
+  lessonId: z.string(),
+  label: z.string(),
+  at: z.string(),
+  createdAt: z.string(),
+});
+export type LessonTagDto = z.infer<typeof LessonTagDtoSchema>;
+
 export const LessonDtoSchema = z.object({
   id: z.string(),
   schoolId: z.string(),
@@ -389,6 +404,7 @@ export const LessonDetailDtoSchema = LessonDtoSchema.extend({
   devices: z.array(DeviceMiniSchema),
   materials: z.array(MaterialDtoSchema),
   recordings: z.array(RecordingDtoSchema),
+  tags: z.array(LessonTagDtoSchema),
   composite: CompositeVideoDtoSchema.nullable(),
 });
 export type LessonDetailDto = z.infer<typeof LessonDetailDtoSchema>;
@@ -416,7 +432,25 @@ export const SOCKET_EVENTS = {
   statusUpdate: 'status:update',
   /** server -> staff: a device reported a new state. */
   deviceStatus: 'device:status',
+  /** device -> server -> staff: a low-res preview snapshot from a camera. */
+  cameraFrame: 'camera:frame',
 } as const;
+
+/** device -> server: a single preview snapshot (a small JPEG data URL). */
+export const CameraFrameInputSchema = z.object({
+  dataUrl: z
+    .string()
+    .max(400_000)
+    .refine((s) => s.startsWith('data:image/'), 'Alleen afbeeldingen zijn toegestaan'),
+});
+export type CameraFrameInput = z.infer<typeof CameraFrameInputSchema>;
+
+/** server -> staff: a preview snapshot tagged with its device. */
+export const CameraFrameSchema = z.object({
+  deviceId: z.string(),
+  dataUrl: z.string(),
+});
+export type CameraFrame = z.infer<typeof CameraFrameSchema>;
 
 /** A device that is currently connected. */
 export const OnlineDeviceSchema = z.object({

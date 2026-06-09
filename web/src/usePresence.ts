@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
 import {
+  CameraFrameSchema,
   DeviceOfflineSchema,
   DeviceStatusUpdateSchema,
   OnlineDeviceSchema,
@@ -11,11 +12,14 @@ import {
 
 /**
  * Connects to the realtime channel as staff (session cookie) and tracks which
- * devices are online plus their last reported state.
+ * devices are online plus their last reported state. Pass `collectFrames` to
+ * also gather the latest preview snapshot per device (only enable where the
+ * control room shows them, to avoid needless re-renders elsewhere).
  */
-export function usePresence() {
+export function usePresence({ collectFrames = false }: { collectFrames?: boolean } = {}) {
   const [online, setOnline] = useState<Set<string>>(new Set());
   const [statuses, setStatuses] = useState<Record<string, DeviceState>>({});
+  const [frames, setFrames] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const socket = io({ withCredentials: true });
@@ -36,6 +40,12 @@ export function usePresence() {
         next.delete(parsed.data.deviceId);
         return next;
       });
+      setFrames((prev) => {
+        if (!(parsed.data.deviceId in prev)) return prev;
+        const next = { ...prev };
+        delete next[parsed.data.deviceId];
+        return next;
+      });
     });
     socket.on(SOCKET_EVENTS.deviceStatus, (raw: unknown) => {
       const parsed = DeviceStatusUpdateSchema.safeParse(raw);
@@ -43,11 +53,19 @@ export function usePresence() {
         setStatuses((prev) => ({ ...prev, [parsed.data.deviceId]: parsed.data.state }));
       }
     });
+    if (collectFrames) {
+      socket.on(SOCKET_EVENTS.cameraFrame, (raw: unknown) => {
+        const parsed = CameraFrameSchema.safeParse(raw);
+        if (parsed.success) {
+          setFrames((prev) => ({ ...prev, [parsed.data.deviceId]: parsed.data.dataUrl }));
+        }
+      });
+    }
 
     return () => {
       socket.close();
     };
-  }, []);
+  }, [collectFrames]);
 
-  return { online, statuses };
+  return { online, statuses, frames };
 }
