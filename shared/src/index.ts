@@ -53,14 +53,42 @@ export const LoginSchema = z.object({
 });
 export type LoginInput = z.infer<typeof LoginSchema>;
 
-/** Admin creates a teacher or student within their own school. */
+/** Admin creates a teacher or student within their own school. Without a
+ * password the user is invited by e-mail to choose one themselves. */
 export const CreateUserSchema = z.object({
   name: nameField,
   email: emailField,
-  password: passwordField,
+  password: passwordField.optional(),
   role: z.enum(['teacher', 'student']),
 });
 export type CreateUserInput = z.infer<typeof CreateUserSchema>;
+
+/** Confirm an e-mail address (or accept an invite / reset) via a token link. */
+export const TokenSchema = z.object({ token: z.string().min(1).max(200) });
+export type TokenInput = z.infer<typeof TokenSchema>;
+
+/** Request a password-reset link by e-mail. */
+export const ForgotPasswordSchema = z.object({ email: emailField });
+export type ForgotPasswordInput = z.infer<typeof ForgotPasswordSchema>;
+
+/** Set a new password using a reset token. */
+export const ResetPasswordSchema = z.object({
+  token: z.string().min(1).max(200),
+  password: passwordField,
+});
+export type ResetPasswordInput = z.infer<typeof ResetPasswordSchema>;
+
+/** Accept an invitation: choose a password (and optionally adjust the name). */
+export const AcceptInviteSchema = z.object({
+  token: z.string().min(1).max(200),
+  name: nameField.optional(),
+  password: passwordField,
+});
+export type AcceptInviteInput = z.infer<typeof AcceptInviteSchema>;
+
+/** Shown on the invite-acceptance page so the user sees who they are. */
+export const InvitePreviewSchema = z.object({ email: z.string(), name: z.string() });
+export type InvitePreview = z.infer<typeof InvitePreviewSchema>;
 
 /** Admin edits a user in their school (any field is optional). */
 export const UpdateUserSchema = z.object({
@@ -109,6 +137,7 @@ export const UserDtoSchema = z.object({
   email: z.string(),
   name: z.string(),
   role: RoleSchema,
+  emailVerified: z.boolean(),
   totpEnabled: z.boolean(),
   createdAt: z.string(),
 });

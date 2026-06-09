@@ -1,7 +1,11 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import {
+  AcceptInviteSchema,
+  ForgotPasswordSchema,
   LoginSchema,
   RegisterSchoolSchema,
+  ResetPasswordSchema,
+  TokenSchema,
   TwoFactorCodeSchema,
   UpdateProfileSchema,
 } from '@practiceroom/shared';
@@ -10,11 +14,13 @@ import { cookieSecure } from '../env.js';
 import { hashPassword, verifyPassword } from '../auth/password.js';
 import { createSession, deleteSession, SESSION_COOKIE } from '../auth/session.js';
 import { requireAuth } from '../auth/plugin.js';
-import { badRequest, conflict, unauthorized } from '../lib/errors.js';
+import { badRequest, conflict, notFound, unauthorized } from '../lib/errors.js';
 import { toSchoolDto, toUserDto } from '../lib/dto.js';
 import { sensitiveRateLimit } from '../lib/rate-limit.js';
 import { audit } from '../lib/audit.js';
 import { generateTotpSecret, totpKeyUri, verifyTotp } from '../lib/totp.js';
+import { consumeToken, createToken, peekToken } from '../lib/token.js';
+import { sendPasswordResetEmail, sendVerificationEmail } from '../lib/mailer.js';
 
 function setSessionCookie(reply: FastifyReply, sessionId: string, expiresAt: Date): void {
   reply.setCookie(SESSION_COOKIE, sessionId, {
@@ -49,6 +55,10 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       });
       return { school, admin };
     });
+
+    // Send a verification e-mail, but let them in right away (soft verify).
+    const token = await createToken(admin.id, 'email_verify');
+    await sendVerificationEmail(admin.email, admin.name, token);
 
     const session = await createSession(admin.id);
     setSessionCookie(reply, session.id, session.expiresAt);
@@ -178,5 +188,89 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     });
     audit(request, '2fa.disable', { userId: me.id });
     return { ok: true };
+  });
+
+  /* ---- E-mail verification ------------------------------------------------- */
+
+  // Confirm an e-mail address from a link. Works whether or not logged in.
+  app.post('/api/auth/verify-email', async (request) => {
+    const { token } = TokenSchema.parse(request.body);
+    const userId = await consumeToken(token, 'email_verify');
+    if (!userId) throw badRequest('Deze verificatielink is ongeldig of verlopen');
+
+    await prisma.user.update({ where: { id: userId }, data: { emailVerified: true } });
+    audit(request, 'email.verify', { userId });
+    return { ok: true };
+  });
+
+  // Resend the verification e-mail to the logged-in user.
+  app.post('/api/auth/verify-email/resend', sensitiveRateLimit, async (request) => {
+    const me = requireAuth(request);
+    const user = await prisma.user.findUnique({ where: { id: me.id } });
+    if (!user) throw unauthorized();
+    if (user.emailVerified) return { ok: true };
+
+    const token = await createToken(user.id, 'email_verify');
+    await sendVerificationEmail(user.email, user.name, token);
+    return { ok: true };
+  });
+
+  /* ---- Password reset ------------------------------------------------------ */
+
+  // Always responds ok so it cannot be used to probe which e-mails exist.
+  app.post('/api/auth/forgot-password', sensitiveRateLimit, async (request) => {
+    const { email } = ForgotPasswordSchema.parse(request.body);
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (user) {
+      const token = await createToken(user.id, 'password_reset');
+      await sendPasswordResetEmail(user.email, user.name, token);
+      audit(request, 'password.reset_requested', { userId: user.id });
+    }
+    return { ok: true };
+  });
+
+  app.post('/api/auth/reset-password', sensitiveRateLimit, async (request) => {
+    const { token, password } = ResetPasswordSchema.parse(request.body);
+    const userId = await consumeToken(token, 'password_reset');
+    if (!userId) throw badRequest('Deze herstellink is ongeldig of verlopen');
+
+    const passwordHash = await hashPassword(password);
+    await prisma.$transaction([
+      prisma.user.update({ where: { id: userId }, data: { passwordHash } }),
+      // Invalidate existing sessions so a reset also kicks out a thief.
+      prisma.session.deleteMany({ where: { userId } }),
+    ]);
+    audit(request, 'password.reset', { userId });
+    return { ok: true };
+  });
+
+  /* ---- Invitations --------------------------------------------------------- */
+
+  // Preview an invite (who it is for) without consuming the token.
+  app.get('/api/auth/invite', async (request) => {
+    const { token } = TokenSchema.parse(request.query);
+    const userId = await peekToken(token, 'invite');
+    if (!userId) throw notFound('Deze uitnodiging is ongeldig of verlopen');
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw notFound('Deze uitnodiging is ongeldig of verlopen');
+    return { email: user.email, name: user.name };
+  });
+
+  // Accept an invite: set a password, verify the e-mail, and log in.
+  app.post('/api/auth/accept-invite', sensitiveRateLimit, async (request, reply) => {
+    const input = AcceptInviteSchema.parse(request.body);
+    const userId = await consumeToken(input.token, 'invite');
+    if (!userId) throw badRequest('Deze uitnodiging is ongeldig of verlopen');
+
+    const passwordHash = await hashPassword(input.password);
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash, emailVerified: true, ...(input.name ? { name: input.name } : {}) },
+    });
+
+    const session = await createSession(user.id);
+    setSessionCookie(reply, session.id, session.expiresAt);
+    audit(request, 'invite.accept', { userId });
+    return toUserDto(user);
   });
 }

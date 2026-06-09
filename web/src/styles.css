@@ -163,6 +163,19 @@ a {
   display: block;
 }
 
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--warning, #f59e0b) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning, #f59e0b) 35%, transparent);
+  font-size: 0.9rem;
+}
+
 .profile-grid {
   display: grid;
   gap: 1.5rem;

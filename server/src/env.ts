@@ -22,6 +22,20 @@ const EnvSchema = z.object({
   // Send cookies only over HTTPS. Defaults to on in production. Set to 'false'
   // to test a production build over plain HTTP locally.
   COOKIE_SECURE: z.enum(['true', 'false']).optional(),
+  // Public base URL of the dashboard, used to build links in e-mails
+  // (verification, password reset, invitations).
+  APP_URL: z.string().min(1).default('http://localhost:5173'),
+  // Outgoing mail (SMTP). Leave SMTP_HOST empty to disable sending: the app
+  // then logs the link it would have mailed instead of failing.
+  SMTP_HOST: z.string().default(''),
+  SMTP_PORT: z.coerce.number().int().positive().default(587),
+  SMTP_USER: z.string().default(''),
+  SMTP_PASS: z.string().default(''),
+  // From address; falls back to SMTP_USER when empty.
+  SMTP_FROM: z.string().default(''),
+  // Use a TLS-on-connect socket (port 465). Leave unset to infer from the port
+  // (465 = true, otherwise STARTTLS on 587).
+  SMTP_SECURE: z.enum(['true', 'false']).optional(),
 });
 
 const parsed = EnvSchema.safeParse(process.env);
@@ -51,3 +65,15 @@ export const corsOrigins = env.CORS_ORIGIN.split(',')
 export const cookieSecure = env.COOKIE_SECURE
   ? env.COOKIE_SECURE === 'true'
   : env.NODE_ENV === 'production';
+
+/** Outgoing mail is only attempted when an SMTP host is configured. */
+export const mailEnabled = env.SMTP_HOST.length > 0;
+
+/** TLS-on-connect (465) vs STARTTLS (587), explicit override via SMTP_SECURE. */
+export const smtpSecure = env.SMTP_SECURE ? env.SMTP_SECURE === 'true' : env.SMTP_PORT === 465;
+
+/** The From address for outgoing mail (falls back to the SMTP username). */
+export const mailFrom = env.SMTP_FROM || env.SMTP_USER;
+
+/** Public dashboard base URL without a trailing slash. */
+export const appUrl = env.APP_URL.replace(/\/+$/, '');

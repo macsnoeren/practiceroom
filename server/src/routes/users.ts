@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { CreateUserSchema, UpdateUserSchema } from '@practiceroom/shared';
 import { prisma } from '../db.js';
@@ -6,13 +7,17 @@ import { requireAuth, requireRole } from '../auth/plugin.js';
 import { badRequest, conflict, notFound } from '../lib/errors.js';
 import { toUserDto } from '../lib/dto.js';
 import { audit } from '../lib/audit.js';
+import { createToken } from '../lib/token.js';
+import { sendInviteEmail } from '../lib/mailer.js';
 
 interface IdParam {
   id: string;
 }
 
 export async function userRoutes(app: FastifyInstance): Promise<void> {
-  // Admin creates a teacher or student within their OWN school.
+  // Admin creates a teacher or student within their OWN school. Without a
+  // password the user is created unverified and invited by e-mail to set one
+  // themselves; with a password they are created ready to use.
   app.post('/api/users', { preHandler: requireRole('admin') }, async (request, reply) => {
     const admin = requireAuth(request);
     const input = CreateUserSchema.parse(request.body);
@@ -20,7 +25,9 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     const existing = await prisma.user.findUnique({ where: { email: input.email } });
     if (existing) throw conflict('E-mailadres is al in gebruik');
 
-    const passwordHash = await hashPassword(input.password);
+    const invite = !input.password;
+    // For an invite, store an unusable random hash until they choose a password.
+    const passwordHash = await hashPassword(input.password ?? randomBytes(32).toString('hex'));
     const user = await prisma.user.create({
       data: {
         schoolId: admin.schoolId, // tenant scope: always the admin's own school
@@ -28,10 +35,16 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         name: input.name,
         role: input.role,
         passwordHash,
+        emailVerified: !invite,
       },
     });
 
-    audit(request, 'user.create', { userId: user.id, role: user.role });
+    if (invite) {
+      const token = await createToken(user.id, 'invite');
+      await sendInviteEmail(user.email, user.name, token);
+    }
+
+    audit(request, 'user.create', { userId: user.id, role: user.role, invite });
     return reply.code(201).send(toUserDto(user));
   });
 

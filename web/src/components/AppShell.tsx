@@ -1,6 +1,7 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { APP_NAME, type UserDto } from '@practiceroom/shared';
+import { ApiError, api } from '../api.js';
 import { useTheme } from '../useTheme.js';
 import { LessonManagement } from './LessonManagement.js';
 import { LessonDashboard } from './LessonDashboard.js';
@@ -88,6 +89,7 @@ export function AppShell({
       </nav>
 
       <main className="main">
+        {!user.emailVerified && <VerifyBanner />}
         <Routes>
           {isStaff ? (
             <>
@@ -190,6 +192,37 @@ function Page({
         {subtitle && <p>{subtitle}</p>}
       </div>
       {children}
+    </div>
+  );
+}
+
+function VerifyBanner() {
+  const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+
+  async function resend() {
+    setStatus('sending');
+    try {
+      await api.resendVerification();
+      setStatus('sent');
+    } catch (err) {
+      if (!(err instanceof ApiError)) console.error(err);
+      setStatus('error');
+    }
+  }
+
+  return (
+    <div className="banner">
+      <span>
+        Je e-mailadres is nog niet bevestigd. Controleer je inbox voor de verificatiemail.
+      </span>
+      {status === 'sent' ? (
+        <span className="success">Verstuurd.</span>
+      ) : (
+        <button type="button" className="linkbtn" onClick={resend} disabled={status === 'sending'}>
+          {status === 'sending' ? 'Bezig…' : 'Opnieuw versturen'}
+        </button>
+      )}
+      {status === 'error' && <span className="error">Versturen mislukt.</span>}
     </div>
   );
 }

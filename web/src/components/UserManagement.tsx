@@ -130,7 +130,6 @@ export function UserManagement({ canManage, me }: { canManage: boolean; me: User
 function CreateUserForm({ onCreated }: { onCreated: () => void }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [role, setRole] = useState<'teacher' | 'student'>('student');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -139,7 +138,8 @@ function CreateUserForm({ onCreated }: { onCreated: () => void }) {
     e.preventDefault();
     setError(null);
 
-    const parsed = CreateUserSchema.safeParse({ name, email, password, role });
+    // No password: the user is invited by e-mail to choose one themselves.
+    const parsed = CreateUserSchema.safeParse({ name, email, role });
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? 'Controleer je invoer');
       return;
@@ -168,14 +168,6 @@ function CreateUserForm({ onCreated }: { onCreated: () => void }) {
         onChange={(e) => setEmail(e.target.value)}
         autoComplete="off"
       />
-      <label htmlFor="cu-password">Wachtwoord (min. 8 tekens)</label>
-      <input
-        id="cu-password"
-        type="password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        autoComplete="new-password"
-      />
       <label htmlFor="cu-role">Rol</label>
       <select
         id="cu-role"
@@ -185,9 +177,12 @@ function CreateUserForm({ onCreated }: { onCreated: () => void }) {
         <option value="student">Student</option>
         <option value="teacher">Leraar</option>
       </select>
+      <p className="muted">
+        De gebruiker krijgt een e-mail met een link om zelf een wachtwoord in te stellen.
+      </p>
       {error && <p className="error">{error}</p>}
       <button type="submit" disabled={busy}>
-        {busy ? 'Bezig…' : 'Toevoegen'}
+        {busy ? 'Bezig…' : 'Uitnodigen'}
       </button>
     </form>
   );

@@ -60,17 +60,36 @@ model User {
   email        String   @unique // globally unique so login needs only email + password
   name         String
   role         String // 'admin' | 'teacher' | 'student'
-  passwordHash String
-  totpSecret   String? // TOTP shared secret (set while/after enabling 2FA)
-  totpEnabled  Boolean  @default(false)
-  createdAt    DateTime @default(now())
+  passwordHash  String
+  emailVerified Boolean  @default(false)
+  totpSecret    String? // TOTP shared secret (set while/after enabling 2FA)
+  totpEnabled   Boolean  @default(false)
+  createdAt     DateTime @default(now())
 
   school         School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   sessions       Session[]
+  tokens         Token[]
   teacherLessons Lesson[]  @relation("TeacherLessons")
   studentLessons Lesson[]  @relation("StudentLessons")
 
   @@index([schoolId])
+}
+
+/// A single-use, time-limited token for e-mail verification, password reset or
+/// an account invitation. Only the sha256 hash is stored; the raw token lives
+/// only in the e-mailed link.
+model Token {
+  id        String    @id @default(cuid())
+  userId    String
+  type      String // 'email_verify' | 'password_reset' | 'invite'
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 /// A capture device (camera/microphone), itself a browser app. It is created

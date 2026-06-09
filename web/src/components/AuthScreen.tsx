@@ -2,7 +2,13 @@ import { useState, type FormEvent } from 'react';
 import { LoginSchema, RegisterSchoolSchema, type UserDto } from '@practiceroom/shared';
 import { ApiError, api } from '../api.js';
 
-type Mode = 'login' | 'register';
+type Mode = 'login' | 'register' | 'forgot';
+
+const TITLES: Record<Mode, string> = {
+  login: 'Inloggen',
+  register: 'Nieuwe muziekschool',
+  forgot: 'Wachtwoord vergeten',
+};
 
 export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: UserDto) => void }) {
   const [mode, setMode] = useState<Mode>('login');
@@ -10,25 +16,33 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: UserDt
   return (
     <div className="card">
       <div className="row">
-        <h2>{mode === 'login' ? 'Inloggen' : 'Nieuwe muziekschool'}</h2>
-        <button
-          type="button"
-          className="linkbtn"
-          onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
-        >
-          {mode === 'login' ? 'Nieuwe school aanmaken' : 'Ik heb al een account'}
-        </button>
+        <h2>{TITLES[mode]}</h2>
+        {mode !== 'forgot' && (
+          <button
+            type="button"
+            className="linkbtn"
+            onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
+          >
+            {mode === 'login' ? 'Nieuwe school aanmaken' : 'Ik heb al een account'}
+          </button>
+        )}
       </div>
-      {mode === 'login' ? (
-        <LoginForm onAuthenticated={onAuthenticated} />
-      ) : (
-        <RegisterForm onAuthenticated={onAuthenticated} />
+      {mode === 'login' && (
+        <LoginForm onAuthenticated={onAuthenticated} onForgot={() => setMode('forgot')} />
       )}
+      {mode === 'register' && <RegisterForm onAuthenticated={onAuthenticated} />}
+      {mode === 'forgot' && <ForgotPasswordForm onBack={() => setMode('login')} />}
     </div>
   );
 }
 
-function LoginForm({ onAuthenticated }: { onAuthenticated: (user: UserDto) => void }) {
+function LoginForm({
+  onAuthenticated,
+  onForgot,
+}: {
+  onAuthenticated: (user: UserDto) => void;
+  onForgot: () => void;
+}) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
@@ -103,6 +117,69 @@ function LoginForm({ onAuthenticated }: { onAuthenticated: (user: UserDto) => vo
       {error && <p className="error">{error}</p>}
       <button type="submit" disabled={busy}>
         {busy ? 'Bezig…' : needsCode ? 'Verifiëren' : 'Inloggen'}
+      </button>
+      {!needsCode && (
+        <button type="button" className="linkbtn" onClick={onForgot}>
+          Wachtwoord vergeten?
+        </button>
+      )}
+    </form>
+  );
+}
+
+function ForgotPasswordForm({ onBack }: { onBack: () => void }) {
+  const [email, setEmail] = useState('');
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setBusy(true);
+    try {
+      await api.forgotPassword(email.trim().toLowerCase());
+      setSent(true);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Versturen mislukt');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (sent) {
+    return (
+      <>
+        <p className="success">
+          Als er een account bij dit e-mailadres hoort, is er een herstellink verstuurd. Controleer
+          je inbox.
+        </p>
+        <button type="button" className="linkbtn" onClick={onBack}>
+          Terug naar inloggen
+        </button>
+      </>
+    );
+  }
+
+  return (
+    <form onSubmit={submit}>
+      <p className="muted">
+        Vul je e-mailadres in en we sturen je een link om je wachtwoord te herstellen.
+      </p>
+      <label htmlFor="forgot-email">E-mail</label>
+      <input
+        id="forgot-email"
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        autoComplete="username"
+      />
+      {error && <p className="error">{error}</p>}
+      <button type="submit" disabled={busy}>
+        {busy ? 'Bezig…' : 'Herstellink versturen'}
+      </button>
+      <button type="button" className="linkbtn" onClick={onBack}>
+        Terug naar inloggen
       </button>
     </form>
   );

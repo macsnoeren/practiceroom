@@ -14,6 +14,7 @@ import {
   SchoolDtoSchema,
   UserDtoSchema,
   TwoFactorSetupSchema,
+  InvitePreviewSchema,
   type CreateHolidayInput,
   type CreateLessonInput,
   type CreateMaterialInput,
@@ -113,6 +114,30 @@ export const api = {
   updateUser: (id: string, input: UpdateUserInput) =>
     request(`/api/users/${id}`, UserDtoSchema, { method: 'PATCH', body: JSON.stringify(input) }),
   deleteUser: (id: string) => requestVoid(`/api/users/${id}`, { method: 'DELETE' }),
+
+  verifyEmail: (token: string) =>
+    request('/api/auth/verify-email', OkSchema, {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    }),
+  resendVerification: () => request('/api/auth/verify-email/resend', OkSchema, { method: 'POST' }),
+  forgotPassword: (email: string) =>
+    request('/api/auth/forgot-password', OkSchema, {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+  resetPassword: (token: string, password: string) =>
+    request('/api/auth/reset-password', OkSchema, {
+      method: 'POST',
+      body: JSON.stringify({ token, password }),
+    }),
+  getInvite: (token: string) =>
+    request(`/api/auth/invite?token=${encodeURIComponent(token)}`, InvitePreviewSchema),
+  acceptInvite: (token: string, password: string, name?: string) =>
+    request('/api/auth/accept-invite', UserDtoSchema, {
+      method: 'POST',
+      body: JSON.stringify({ token, password, ...(name ? { name } : {}) }),
+    }),
 
   updateProfile: (input: UpdateProfileInput) =>
     request('/api/auth/me', UserDtoSchema, { method: 'PATCH', body: JSON.stringify(input) }),
