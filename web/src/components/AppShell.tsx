@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
+import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { APP_NAME, type UserDto } from '@practiceroom/shared';
 import { useTheme } from '../useTheme.js';
 import { LessonManagement } from './LessonManagement.js';
@@ -9,6 +9,7 @@ import { UserManagement } from './UserManagement.js';
 import { StudentLessons } from './StudentLessons.js';
 import { HolidayManagement } from './HolidayManagement.js';
 import { RoomManagement } from './RoomManagement.js';
+import { ProfilePage } from './ProfilePage.js';
 
 const ROLE_LABEL: Record<UserDto['role'], string> = {
   admin: 'Beheerder',
@@ -19,7 +20,15 @@ const ROLE_LABEL: Record<UserDto['role'], string> = {
 const navClass = ({ isActive }: { isActive: boolean }) =>
   isActive ? 'nav-link active' : 'nav-link';
 
-export function AppShell({ user, onLogout }: { user: UserDto; onLogout: () => void }) {
+export function AppShell({
+  user,
+  onLogout,
+  onUserUpdate,
+}: {
+  user: UserDto;
+  onLogout: () => void;
+  onUserUpdate: (u: UserDto) => void;
+}) {
   const isStaff = user.role !== 'student';
   const isAdmin = user.role === 'admin';
   const { theme, toggle } = useTheme();
@@ -42,10 +51,10 @@ export function AppShell({ user, onLogout }: { user: UserDto; onLogout: () => vo
           >
             {theme === 'dark' ? '☀️' : '🌙'}
           </button>
-          <div className="who">
+          <Link to="/profile" className="who" title="Mijn profiel">
             <strong>{user.name}</strong>
             <small>{ROLE_LABEL[user.role]}</small>
-          </div>
+          </Link>
           <button type="button" className="secondary" onClick={onLogout}>
             Uitloggen
           </button>
@@ -135,7 +144,7 @@ export function AppShell({ user, onLogout }: { user: UserDto; onLogout: () => vo
                 path="/users"
                 element={
                   <Page title="Gebruikers" subtitle="Beheer de leraren en studenten van je school.">
-                    <UserManagement canCreate={isAdmin} />
+                    <UserManagement canManage={isAdmin} me={user} />
                   </Page>
                 }
               />
@@ -150,6 +159,14 @@ export function AppShell({ user, onLogout }: { user: UserDto; onLogout: () => vo
               }
             />
           )}
+          <Route
+            path="/profile"
+            element={
+              <Page title="Mijn profiel" subtitle="Beheer je gegevens en beveiliging.">
+                <ProfilePage user={user} onUpdated={onUserUpdate} />
+              </Page>
+            }
+          />
           <Route path="*" element={<Navigate to="/lessons" replace />} />
         </Routes>
       </main>

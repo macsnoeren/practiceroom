@@ -48,6 +48,8 @@ export type RegisterSchoolInput = z.infer<typeof RegisterSchoolSchema>;
 export const LoginSchema = z.object({
   email: emailField,
   password: z.string().min(1).max(200),
+  // Required only when the account has two-factor authentication enabled.
+  code: z.string().trim().optional(),
 });
 export type LoginInput = z.infer<typeof LoginSchema>;
 
@@ -60,6 +62,42 @@ export const CreateUserSchema = z.object({
 });
 export type CreateUserInput = z.infer<typeof CreateUserSchema>;
 
+/** Admin edits a user in their school (any field is optional). */
+export const UpdateUserSchema = z.object({
+  name: nameField.optional(),
+  email: emailField.optional(),
+  role: RoleSchema.optional(),
+  password: passwordField.optional(),
+});
+export type UpdateUserInput = z.infer<typeof UpdateUserSchema>;
+
+/** A user edits their own profile. Changing the password needs the current one. */
+export const UpdateProfileSchema = z
+  .object({
+    name: nameField.optional(),
+    email: emailField.optional(),
+    currentPassword: z.string().min(1).max(200).optional(),
+    newPassword: passwordField.optional(),
+  })
+  .refine((p) => !p.newPassword || !!p.currentPassword, {
+    message: 'Vul je huidige wachtwoord in om het te wijzigen',
+    path: ['currentPassword'],
+  });
+export type UpdateProfileInput = z.infer<typeof UpdateProfileSchema>;
+
+/** A 6–8 digit time-based one-time code. */
+export const TwoFactorCodeSchema = z.object({
+  code: z.string().trim().min(6).max(8),
+});
+export type TwoFactorCodeInput = z.infer<typeof TwoFactorCodeSchema>;
+
+/** Returned when starting 2FA setup: the otpauth URL (for a QR) and secret. */
+export const TwoFactorSetupSchema = z.object({
+  otpauthUrl: z.string(),
+  secret: z.string(),
+});
+export type TwoFactorSetup = z.infer<typeof TwoFactorSetupSchema>;
+
 /* -------------------------------------------------------------------------- */
 /* DTOs (responses)                                                           */
 /* -------------------------------------------------------------------------- */
@@ -71,6 +109,7 @@ export const UserDtoSchema = z.object({
   email: z.string(),
   name: z.string(),
   role: RoleSchema,
+  totpEnabled: z.boolean(),
   createdAt: z.string(),
 });
 export type UserDto = z.infer<typeof UserDtoSchema>;

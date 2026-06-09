@@ -31,6 +31,8 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: UserDt
 function LoginForm({ onAuthenticated }: { onAuthenticated: (user: UserDto) => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
+  const [needsCode, setNeedsCode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -38,7 +40,11 @@ function LoginForm({ onAuthenticated }: { onAuthenticated: (user: UserDto) => vo
     e.preventDefault();
     setError(null);
 
-    const parsed = LoginSchema.safeParse({ email, password });
+    const parsed = LoginSchema.safeParse({
+      email,
+      password,
+      code: code.trim() || undefined,
+    });
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? 'Controleer je invoer');
       return;
@@ -48,7 +54,13 @@ function LoginForm({ onAuthenticated }: { onAuthenticated: (user: UserDto) => vo
     try {
       onAuthenticated(await api.login(parsed.data));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Inloggen mislukt');
+      if (err instanceof ApiError && err.twofa) {
+        // The account has 2FA: reveal the code field and ask for it.
+        setNeedsCode(true);
+        setError(needsCode ? err.message : null);
+      } else {
+        setError(err instanceof ApiError ? err.message : 'Inloggen mislukt');
+      }
     } finally {
       setBusy(false);
     }
@@ -63,6 +75,7 @@ function LoginForm({ onAuthenticated }: { onAuthenticated: (user: UserDto) => vo
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         autoComplete="username"
+        disabled={needsCode}
       />
       <label htmlFor="login-password">Wachtwoord</label>
       <input
@@ -71,10 +84,25 @@ function LoginForm({ onAuthenticated }: { onAuthenticated: (user: UserDto) => vo
         value={password}
         onChange={(e) => setPassword(e.target.value)}
         autoComplete="current-password"
+        disabled={needsCode}
       />
+      {needsCode && (
+        <>
+          <label htmlFor="login-code">Verificatiecode</label>
+          <input
+            id="login-code"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            autoFocus
+          />
+          <p className="muted">Voer de code uit je authenticator-app in.</p>
+        </>
+      )}
       {error && <p className="error">{error}</p>}
       <button type="submit" disabled={busy}>
-        {busy ? 'Bezig…' : 'Inloggen'}
+        {busy ? 'Bezig…' : needsCode ? 'Verifiëren' : 'Inloggen'}
       </button>
     </form>
   );

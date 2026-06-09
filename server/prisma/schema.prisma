@@ -61,6 +61,8 @@ model User {
   name         String
   role         String // 'admin' | 'teacher' | 'student'
   passwordHash String
+  totpSecret   String? // TOTP shared secret (set while/after enabling 2FA)
+  totpEnabled  Boolean  @default(false)
   createdAt    DateTime @default(now())
 
   school         School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)

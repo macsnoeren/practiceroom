@@ -144,11 +144,40 @@ a {
 .topbar-user .who {
   text-align: right;
   line-height: 1.2;
+  text-decoration: none;
+  color: inherit;
+  border-radius: var(--radius);
+  padding: 0.25rem 0.5rem;
+}
+
+.topbar-user .who:hover {
+  background: var(--surface-2, rgba(0, 0, 0, 0.05));
+}
+
+.topbar-user .who strong {
+  display: block;
 }
 
 .topbar-user .who small {
   color: var(--muted);
   display: block;
+}
+
+.profile-grid {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  align-items: start;
+}
+
+.qr {
+  width: 200px;
+  height: 200px;
+  display: block;
+  margin: 0.5rem 0;
+  border-radius: var(--radius);
+  background: #fff;
+  padding: 0.5rem;
 }
 
 .icon-btn {

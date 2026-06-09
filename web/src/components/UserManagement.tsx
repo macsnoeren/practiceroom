@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { CreateUserSchema, type UserDto } from '@practiceroom/shared';
+import {
+  CreateUserSchema,
+  UpdateUserSchema,
+  type UpdateUserInput,
+  type UserDto,
+} from '@practiceroom/shared';
 import { ApiError, api } from '../api.js';
 import { Modal } from './Modal.js';
 
@@ -9,10 +14,11 @@ const ROLE_LABEL: Record<UserDto['role'], string> = {
   student: 'Student',
 };
 
-export function UserManagement({ canCreate }: { canCreate: boolean }) {
+export function UserManagement({ canManage, me }: { canManage: boolean; me: UserDto }) {
   const [users, setUsers] = useState<UserDto[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<UserDto | null>(null);
 
   const refresh = useCallback(async () => {
     setListError(null);
@@ -27,12 +33,24 @@ export function UserManagement({ canCreate }: { canCreate: boolean }) {
     void refresh();
   }, [refresh]);
 
+  async function remove(user: UserDto) {
+    if (!confirm(`Gebruiker "${user.name}" verwijderen? Dit kan niet ongedaan worden gemaakt.`)) {
+      return;
+    }
+    try {
+      await api.deleteUser(user.id);
+      void refresh();
+    } catch (err) {
+      setListError(err instanceof ApiError ? err.message : 'Verwijderen mislukt');
+    }
+  }
+
   return (
     <div className="card">
       <div className="row">
         <h2>Gebruikers in jouw school</h2>
-        {canCreate && (
-          <button type="button" onClick={() => setOpen(true)}>
+        {canManage && (
+          <button type="button" onClick={() => setCreating(true)}>
             + Gebruiker toevoegen
           </button>
         )}
@@ -48,6 +66,7 @@ export function UserManagement({ canCreate }: { canCreate: boolean }) {
               <th>Naam</th>
               <th>E-mail</th>
               <th>Rol</th>
+              {canManage && <th>Acties</th>}
             </tr>
           </thead>
           <tbody>
@@ -57,18 +76,48 @@ export function UserManagement({ canCreate }: { canCreate: boolean }) {
                 <td>{u.email}</td>
                 <td>
                   <span className="tag">{ROLE_LABEL[u.role]}</span>
+                  {u.totpEnabled && <span className="tag tag-ok">2FA</span>}
                 </td>
+                {canManage && (
+                  <td className="actions">
+                    <button type="button" className="linkbtn" onClick={() => setEditing(u)}>
+                      Bewerken
+                    </button>
+                    {u.id !== me.id && (
+                      <button
+                        type="button"
+                        className="linkbtn danger"
+                        onClick={() => void remove(u)}
+                      >
+                        Verwijderen
+                      </button>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
         </table>
       )}
 
-      {open && (
-        <Modal title="Gebruiker toevoegen" onClose={() => setOpen(false)}>
+      {creating && (
+        <Modal title="Gebruiker toevoegen" onClose={() => setCreating(false)}>
           <CreateUserForm
             onCreated={() => {
-              setOpen(false);
+              setCreating(false);
+              void refresh();
+            }}
+          />
+        </Modal>
+      )}
+
+      {editing && (
+        <Modal title="Gebruiker bewerken" onClose={() => setEditing(null)}>
+          <EditUserForm
+            user={editing}
+            isSelf={editing.id === me.id}
+            onSaved={() => {
+              setEditing(null);
               void refresh();
             }}
           />
@@ -139,6 +188,94 @@ function CreateUserForm({ onCreated }: { onCreated: () => void }) {
       {error && <p className="error">{error}</p>}
       <button type="submit" disabled={busy}>
         {busy ? 'Bezig…' : 'Toevoegen'}
+      </button>
+    </form>
+  );
+}
+
+function EditUserForm({
+  user,
+  isSelf,
+  onSaved,
+}: {
+  user: UserDto;
+  isSelf: boolean;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(user.name);
+  const [email, setEmail] = useState(user.email);
+  const [role, setRole] = useState<UserDto['role']>(user.role);
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+
+    const input: UpdateUserInput = {};
+    if (name !== user.name) input.name = name;
+    if (email !== user.email) input.email = email;
+    if (!isSelf && role !== user.role) input.role = role;
+    if (password) input.password = password;
+
+    if (Object.keys(input).length === 0) {
+      onSaved();
+      return;
+    }
+
+    const parsed = UpdateUserSchema.safeParse(input);
+    if (!parsed.success) {
+      setError(parsed.error.issues[0]?.message ?? 'Controleer je invoer');
+      return;
+    }
+
+    setBusy(true);
+    try {
+      await api.updateUser(user.id, parsed.data);
+      onSaved();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Opslaan mislukt');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit}>
+      <label htmlFor="eu-name">Naam</label>
+      <input id="eu-name" value={name} onChange={(e) => setName(e.target.value)} />
+      <label htmlFor="eu-email">E-mail</label>
+      <input
+        id="eu-email"
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        autoComplete="off"
+      />
+      <label htmlFor="eu-role">Rol</label>
+      <select
+        id="eu-role"
+        value={role}
+        onChange={(e) => setRole(e.target.value as UserDto['role'])}
+        disabled={isSelf}
+      >
+        <option value="student">Student</option>
+        <option value="teacher">Leraar</option>
+        <option value="admin">Beheerder</option>
+      </select>
+      {isSelf && <p className="muted">Je kunt je eigen rol niet wijzigen.</p>}
+      <label htmlFor="eu-password">Nieuw wachtwoord (optioneel, min. 8 tekens)</label>
+      <input
+        id="eu-password"
+        type="password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        autoComplete="new-password"
+      />
+      {error && <p className="error">{error}</p>}
+      <button type="submit" disabled={busy}>
+        {busy ? 'Bezig…' : 'Opslaan'}
       </button>
     </form>
   );

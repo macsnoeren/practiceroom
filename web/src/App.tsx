@@ -49,7 +49,11 @@ export function App() {
 
   return (
     <BrowserRouter>
-      <AppShell user={auth.user} onLogout={logout} />
+      <AppShell
+        user={auth.user}
+        onLogout={logout}
+        onUserUpdate={(user) => setAuth({ kind: 'authenticated', user })}
+      />
     </BrowserRouter>
   );
 }

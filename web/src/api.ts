@@ -13,6 +13,7 @@ import {
   RoomDtoSchema,
   SchoolDtoSchema,
   UserDtoSchema,
+  TwoFactorSetupSchema,
   type CreateHolidayInput,
   type CreateLessonInput,
   type CreateMaterialInput,
@@ -21,6 +22,8 @@ import {
   type RegisterSchoolInput,
   type SchoolDto,
   type UpdateLessonInput,
+  type UpdateProfileInput,
+  type UpdateUserInput,
   type UserDto,
 } from '@practiceroom/shared';
 
@@ -29,6 +32,8 @@ export class ApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    /** Set when the login needs a second factor (TOTP) code. */
+    public readonly twofa = false,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -67,7 +72,8 @@ async function request<T>(path: string, schema: z.ZodType<T>, init?: RequestInit
       data && typeof (data as { error?: unknown }).error === 'string'
         ? (data as { error: string }).error
         : `Er ging iets mis (${res.status})`;
-    throw new ApiError(res.status, message);
+    const twofa = !!(data && (data as { twofa?: unknown }).twofa === true);
+    throw new ApiError(res.status, message, twofa);
   }
 
   return schema.parse(data);
@@ -104,6 +110,17 @@ export const api = {
   createUser: (input: CreateUserInput) =>
     request('/api/users', UserDtoSchema, { method: 'POST', body: JSON.stringify(input) }),
   listUsers: () => request('/api/users', z.array(UserDtoSchema)),
+  updateUser: (id: string, input: UpdateUserInput) =>
+    request(`/api/users/${id}`, UserDtoSchema, { method: 'PATCH', body: JSON.stringify(input) }),
+  deleteUser: (id: string) => requestVoid(`/api/users/${id}`, { method: 'DELETE' }),
+
+  updateProfile: (input: UpdateProfileInput) =>
+    request('/api/auth/me', UserDtoSchema, { method: 'PATCH', body: JSON.stringify(input) }),
+  twoFactorSetup: () => request('/api/auth/2fa/setup', TwoFactorSetupSchema, { method: 'POST' }),
+  twoFactorEnable: (code: string) =>
+    request('/api/auth/2fa/enable', OkSchema, { method: 'POST', body: JSON.stringify({ code }) }),
+  twoFactorDisable: (code: string) =>
+    request('/api/auth/2fa/disable', OkSchema, { method: 'POST', body: JSON.stringify({ code }) }),
 
   listDevices: () => request('/api/devices', z.array(DeviceDtoSchema)),
   createDevice: (name: string) =>
