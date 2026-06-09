@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   CreateMaterialSchema,
   type DeviceDto,
@@ -16,12 +16,16 @@ import { LessonPlayer } from './LessonPlayer.js';
 export function LessonDashboard() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
-  const { online, frames } = usePresence({ collectFrames: true });
+  const { online, statuses, frames } = usePresence({ collectFrames: true });
 
   const [detail, setDetail] = useState<LessonDetailDto | null>(null);
   const [devices, setDevices] = useState<DeviceDto[]>([]);
   const [rooms, setRooms] = useState<RoomDto[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // Optimistic intent: a deviceId while we want it recording, null while we
+  // want it stopped, undefined when we just follow the live truth.
+  const [pending, setPending] = useState<string | null | undefined>(undefined);
+  const autoSelectedRef = useRef(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -41,6 +45,44 @@ export function LessonDashboard() {
       .catch(() => undefined);
   }, [load]);
 
+  // Default: attach every registered camera to the lesson the first time we see
+  // a lesson with none selected yet.
+  useEffect(() => {
+    if (autoSelectedRef.current || !detail) return;
+    const finishedNow = detail.status === 'recorded' || detail.status === 'ready';
+    if (!finishedNow && detail.devices.length === 0 && devices.length > 0) {
+      autoSelectedRef.current = true;
+      api
+        .setLessonDevices(
+          id,
+          devices.map((d) => d.id),
+        )
+        .then(load)
+        .catch(() => undefined);
+    }
+  }, [detail, devices, id, load]);
+
+  // Which camera is *really* recording: prefer the camera's own live status
+  // (near-instant over the socket), then fall back to the latest open segment
+  // (e.g. when opening the page mid-session). The DB status of older segments
+  // lags because a stopped camera only finalises after it finishes uploading.
+  const liveActiveId = useMemo(() => {
+    if (!detail) return null;
+    const ids = new Set(detail.devices.map((d) => d.id));
+    const reporting = Object.keys(statuses).find(
+      (dev) => ids.has(dev) && statuses[dev] === 'recording',
+    );
+    if (reporting) return reporting;
+    return [...detail.recordings].reverse().find((r) => r.status === 'recording')?.deviceId ?? null;
+  }, [detail, statuses]);
+
+  // Drop the optimistic guess once the live state agrees with it.
+  useEffect(() => {
+    if (pending !== undefined && liveActiveId === pending) setPending(undefined);
+  }, [liveActiveId, pending]);
+
+  const activeId = pending !== undefined ? pending : liveActiveId;
+
   const deviceName = (deviceId: string) =>
     detail?.devices.find((d) => d.id === deviceId)?.name ?? 'Camera';
 
@@ -51,6 +93,30 @@ export function LessonDashboard() {
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : failMsg);
+    }
+  }
+
+  async function startOn(deviceId: string) {
+    setError(null);
+    setPending(deviceId); // light up the new tile immediately
+    try {
+      await api.startRecording(id, deviceId);
+      await load();
+    } catch (err) {
+      setPending(undefined);
+      setError(err instanceof ApiError ? err.message : 'Starten mislukt');
+    }
+  }
+
+  async function stopActive() {
+    setError(null);
+    setPending(null); // clear the active tile immediately
+    try {
+      await api.stopRecording(id);
+      await load();
+    } catch (err) {
+      setPending(undefined);
+      setError(err instanceof ApiError ? err.message : 'Stoppen mislukt');
     }
   }
 
@@ -77,50 +143,16 @@ export function LessonDashboard() {
   if (!detail) return <p className="muted">Laden…</p>;
 
   const finished = detail.status === 'recorded' || detail.status === 'ready';
-  const activeDeviceId = detail.recordings.find((r) => r.status === 'recording')?.deviceId ?? null;
 
   return (
     <div>
-      <p>
-        <Link to="/lessons">← Terug naar lessen</Link>
-      </p>
-
-      <div className="card">
-        <div className="row">
-          <div>
-            <h2>{detail.title || 'Les'}</h2>
-            <div className="muted">
-              {formatWhen(detail.startsAt)} · {detail.durationMinutes} min · student{' '}
-              {detail.student.name} · leraar {detail.teacher.name}
-              {detail.seriesId ? ' · onderdeel van een wekelijkse reeks' : ''}
-            </div>
-          </div>
-          <span className="tag">{detail.status}</span>
-        </div>
-
-        <label htmlFor="lesson-room">Lokaal</label>
-        <select
-          id="lesson-room"
-          value={detail.room?.id ?? ''}
-          onChange={(e) =>
-            run(() => api.updateLesson(id, { roomId: e.target.value || null }), 'Opslaan mislukt')
-          }
-        >
-          <option value="">— geen lokaal —</option>
-          {rooms.map((r) => (
-            <option key={r.id} value={r.id}>
-              {r.name}
-            </option>
-          ))}
-        </select>
-
-        {error && <p className="error">{error}</p>}
-      </div>
-
       <div className="card control-room">
         <div className="row">
-          <h2>Regiekamer</h2>
-          {activeDeviceId ? (
+          <div>
+            <h2>Regiekamer</h2>
+            <div className="muted">{detail.title || 'Les'}</div>
+          </div>
+          {activeId ? (
             <span className="tag rec">● opname loopt</span>
           ) : (
             <span className="tag">standby</span>
@@ -145,7 +177,7 @@ export function LessonDashboard() {
           <div className="cam-grid">
             {detail.devices.map((d) => {
               const isOnline = online.has(d.id);
-              const isActive = activeDeviceId === d.id;
+              const isActive = activeId === d.id;
               const frame = frames[d.id];
               const clickable = !finished && (isOnline || isActive);
               return (
@@ -154,11 +186,7 @@ export function LessonDashboard() {
                   type="button"
                   className={`cam-tile${isActive ? ' recording' : ''}${isOnline ? '' : ' offline'}`}
                   disabled={!clickable}
-                  onClick={() =>
-                    isActive
-                      ? run(() => api.stopRecording(id), 'Stoppen mislukt')
-                      : run(() => api.startRecording(id, d.id), 'Starten mislukt')
-                  }
+                  onClick={() => (isActive ? void stopActive() : void startOn(d.id))}
                 >
                   {frame ? (
                     <img className="cam-tile-img" src={frame} alt={`Beeld van ${d.name}`} />
@@ -185,13 +213,9 @@ export function LessonDashboard() {
 
         {!finished && (
           <div className="recording-buttons">
-            {activeDeviceId && (
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => run(() => api.stopRecording(id), 'Stoppen mislukt')}
-              >
-                Stop ({deviceName(activeDeviceId)})
+            {activeId && (
+              <button type="button" className="secondary" onClick={() => void stopActive()}>
+                Stop ({deviceName(activeId)})
               </button>
             )}
             <button
@@ -206,6 +230,8 @@ export function LessonDashboard() {
             </button>
           </div>
         )}
+
+        {error && <p className="error">{error}</p>}
 
         <details className="cam-picker">
           <summary>Camera&rsquo;s kiezen</summary>
@@ -240,6 +266,12 @@ export function LessonDashboard() {
       </div>
 
       <div className="card">
+        <h2>Aantekeningen &amp; tags</h2>
+        <NotesEditor lessonId={id} initialNotes={detail.notes} />
+        <TagsPanel detail={detail} onChanged={load} />
+      </div>
+
+      <div className="card">
         <CompositePlayer lessonId={id} composite={detail.composite} />
         <LessonPlayer recordings={detail.recordings} deviceName={deviceName} />
         {detail.composite === null && detail.recordings.length === 0 && (
@@ -248,9 +280,33 @@ export function LessonDashboard() {
       </div>
 
       <div className="card">
-        <h2>Aantekeningen &amp; tags</h2>
-        <NotesEditor lessonId={id} initialNotes={detail.notes} />
-        <TagsPanel detail={detail} onChanged={load} />
+        <div className="row">
+          <div>
+            <h2>{detail.title || 'Les'}</h2>
+            <div className="muted">
+              {formatWhen(detail.startsAt)} · {detail.durationMinutes} min · student{' '}
+              {detail.student.name} · leraar {detail.teacher.name}
+              {detail.seriesId ? ' · onderdeel van een wekelijkse reeks' : ''}
+            </div>
+          </div>
+          <span className="tag">{detail.status}</span>
+        </div>
+
+        <label htmlFor="lesson-room">Lokaal</label>
+        <select
+          id="lesson-room"
+          value={detail.room?.id ?? ''}
+          onChange={(e) =>
+            run(() => api.updateLesson(id, { roomId: e.target.value || null }), 'Opslaan mislukt')
+          }
+        >
+          <option value="">— geen lokaal —</option>
+          {rooms.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.name}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="card">
