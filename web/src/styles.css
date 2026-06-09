@@ -311,6 +311,12 @@ a {
   max-width: 400px;
 }
 
+.form-footer {
+  margin: 0.85rem 0 0;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
 .auth-brand {
   display: flex;
   align-items: center;

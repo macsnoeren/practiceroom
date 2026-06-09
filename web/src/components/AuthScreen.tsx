@@ -23,7 +23,7 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: UserDt
             className="linkbtn"
             onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
           >
-            {mode === 'login' ? 'Nieuwe school aanmaken' : 'Ik heb al een account'}
+            {mode === 'login' ? 'Registreren' : 'Ik heb al een account'}
           </button>
         )}
       </div>
@@ -119,9 +119,11 @@ function LoginForm({
         {busy ? 'Bezig…' : needsCode ? 'Verifiëren' : 'Inloggen'}
       </button>
       {!needsCode && (
-        <button type="button" className="linkbtn" onClick={onForgot}>
-          Wachtwoord vergeten?
-        </button>
+        <p className="form-footer">
+          <button type="button" className="linkbtn" onClick={onForgot}>
+            Wachtwoord vergeten?
+          </button>
+        </p>
       )}
     </form>
   );
@@ -178,9 +180,11 @@ function ForgotPasswordForm({ onBack }: { onBack: () => void }) {
       <button type="submit" disabled={busy}>
         {busy ? 'Bezig…' : 'Herstellink versturen'}
       </button>
-      <button type="button" className="linkbtn" onClick={onBack}>
-        Terug naar inloggen
-      </button>
+      <p className="form-footer">
+        <button type="button" className="linkbtn" onClick={onBack}>
+          Terug naar inloggen
+        </button>
+      </p>
     </form>
   );
 }
