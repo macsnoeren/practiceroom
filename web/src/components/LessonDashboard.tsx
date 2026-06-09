@@ -202,6 +202,8 @@ export function LessonDashboard() {
               <li key={r.id}>
                 <div>
                   Segment {i + 1}: {deviceName(r.deviceId)} <span className="tag">{r.status}</span>{' '}
+                  {!r.hasVideo && <span className="tag">alleen geluid</span>}
+                  {r.hasVideo && !r.hasAudio && <span className="tag">zonder geluid</span>}{' '}
                   {r.sizeBytes > 0 && <span className="muted">{formatBytes(r.sizeBytes)}</span>}
                 </div>
               </li>

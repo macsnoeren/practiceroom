@@ -64,10 +64,15 @@ export async function recordingRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/recordings/:id/complete', async (request) => {
     const device = await authenticateDevice(request);
     const { id } = request.params as RecordingParam;
-    const mimeType = (request.query as { mimeType?: string }).mimeType;
+    const query = request.query as { mimeType?: string; hasVideo?: string; hasAudio?: string };
 
     const recording = await prisma.recording.findUnique({ where: { id } });
     if (!recording || recording.deviceId !== device.id) throw notFound('Opname niet gevonden');
+
+    // The device reports what it actually captured (camera + mic, audio only, or
+    // video without sound) so the composite worker can stitch it correctly.
+    const hasVideo = query.hasVideo === undefined ? recording.hasVideo : query.hasVideo !== 'false';
+    const hasAudio = query.hasAudio === undefined ? recording.hasAudio : query.hasAudio !== 'false';
 
     const size = await recordingSize(id);
     const completed = await prisma.recording.update({
@@ -76,7 +81,9 @@ export async function recordingRoutes(app: FastifyInstance): Promise<void> {
         status: 'completed',
         completedAt: new Date(),
         sizeBytes: size,
-        mimeType: mimeType ?? recording.mimeType,
+        mimeType: query.mimeType ?? recording.mimeType,
+        hasVideo,
+        hasAudio,
       },
     });
 

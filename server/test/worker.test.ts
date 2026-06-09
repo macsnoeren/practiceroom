@@ -6,7 +6,11 @@ import { promisify } from 'node:util';
 import { after, before, describe, it } from 'node:test';
 import type { FastifyInstance } from 'fastify';
 import ffmpeg from '@ffmpeg-installer/ffmpeg';
-import { buildConcatArgs } from '../src/lib/composite.js';
+import {
+  buildBlackVideoArgs,
+  buildConcatArgs,
+  buildSilentAudioArgs,
+} from '../src/lib/composite.js';
 import { processQueuedJob } from '../src/worker/runner.js';
 import { prisma } from '../src/db.js';
 import { compositePath, recordingPath } from '../src/lib/storage.js';
@@ -41,6 +45,36 @@ async function genWebm(path: string, size: string, freq: number) {
     '-c:a',
     'libopus',
     '-shortest',
+    '-y',
+    path,
+  ]);
+}
+
+/** An audio-only webm (no video stream). */
+async function genAudioWebm(path: string, freq: number) {
+  await mkdir(dirname(path), { recursive: true });
+  await execFileP(ffmpeg.path, [
+    '-f',
+    'lavfi',
+    '-i',
+    `sine=frequency=${freq}:duration=1`,
+    '-c:a',
+    'libopus',
+    '-y',
+    path,
+  ]);
+}
+
+/** A video-only webm (no audio stream). */
+async function genVideoWebm(path: string, size: string) {
+  await mkdir(dirname(path), { recursive: true });
+  await execFileP(ffmpeg.path, [
+    '-f',
+    'lavfi',
+    '-i',
+    `testsrc=duration=1:size=${size}:rate=15`,
+    '-c:v',
+    'libvpx',
     '-y',
     path,
   ]);
@@ -89,6 +123,59 @@ describe('worker: composite video', () => {
     assert.ok(args.join(' ').includes('concat=n=2:v=1:a=1'));
     assert.equal(args.at(-1), 'out.mp4');
     assert.throws(() => buildConcatArgs([], 'out.mp4'));
+  });
+
+  it('builds args to pad audio-only and video-only segments (pure)', () => {
+    const black = buildBlackVideoArgs('audio.webm', 'fixed.webm');
+    assert.ok(black.join(' ').includes('color=c=black'));
+    assert.ok(black.includes('-shortest'));
+    assert.equal(black.at(-1), 'fixed.webm');
+
+    const silent = buildSilentAudioArgs('video.webm', 'fixed.webm');
+    assert.ok(silent.join(' ').includes('anullsrc'));
+    assert.ok(silent.includes('-shortest'));
+  });
+
+  it('composites a mix of camera, audio-only and silent-camera segments', async () => {
+    const s = await setup('mixed');
+    const both = await prisma.recording.create({
+      data: {
+        lessonId: s.lessonId,
+        deviceId: s.deviceId,
+        status: 'completed',
+        hasVideo: true,
+        hasAudio: true,
+        startedAt: new Date(Date.now() - 3000),
+      },
+    });
+    const audioOnly = await prisma.recording.create({
+      data: {
+        lessonId: s.lessonId,
+        deviceId: s.deviceId,
+        status: 'completed',
+        hasVideo: false,
+        hasAudio: true,
+        startedAt: new Date(Date.now() - 2000),
+      },
+    });
+    const videoOnly = await prisma.recording.create({
+      data: {
+        lessonId: s.lessonId,
+        deviceId: s.deviceId,
+        status: 'completed',
+        hasVideo: true,
+        hasAudio: false,
+        startedAt: new Date(Date.now() - 1000),
+      },
+    });
+    await genWebm(recordingPath(both.id), '320x240', 440);
+    await genAudioWebm(recordingPath(audioOnly.id), 550);
+    await genVideoWebm(recordingPath(videoOnly.id), '640x480');
+    await prisma.compositeVideo.create({ data: { lessonId: s.lessonId, status: 'queued' } });
+
+    assert.equal(await processQueuedJob(), 'done');
+    assert.ok((await stat(compositePath(s.lessonId))).size > 0);
+    assert.equal((await prisma.lesson.findUnique({ where: { id: s.lessonId } }))?.status, 'ready');
   });
 
   it('concatenates segments (different sizes) into one playable lesson video', async () => {

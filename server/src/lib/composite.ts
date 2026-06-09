@@ -9,6 +9,61 @@ export const COMPOSITE_FPS = 30;
  * letterboxed to a common frame and a uniform fps/sample rate before the concat
  * filter joins them — that's what makes mismatched segments stitch cleanly.
  */
+/**
+ * ffmpeg args that add a silent stereo audio track to a video-only segment,
+ * keeping the original video untouched. `-shortest` ties the silence to the
+ * video's length. Output stays a .webm so the concat step treats it like any
+ * other segment.
+ */
+export function buildSilentAudioArgs(input: string, output: string): string[] {
+  return [
+    '-i',
+    input,
+    '-f',
+    'lavfi',
+    '-i',
+    'anullsrc=channel_layout=stereo:sample_rate=48000',
+    '-map',
+    '0:v:0',
+    '-map',
+    '1:a:0',
+    '-c:v',
+    'copy',
+    '-c:a',
+    'libopus',
+    '-shortest',
+    '-y',
+    output,
+  ];
+}
+
+/**
+ * ffmpeg args that add a black video track to an audio-only segment, keeping the
+ * original audio untouched. `-shortest` ties the black frame to the audio's
+ * length.
+ */
+export function buildBlackVideoArgs(input: string, output: string): string[] {
+  return [
+    '-f',
+    'lavfi',
+    '-i',
+    `color=c=black:s=${COMPOSITE_WIDTH}x${COMPOSITE_HEIGHT}:r=${COMPOSITE_FPS}`,
+    '-i',
+    input,
+    '-map',
+    '0:v:0',
+    '-map',
+    '1:a:0',
+    '-c:v',
+    'libvpx',
+    '-c:a',
+    'copy',
+    '-shortest',
+    '-y',
+    output,
+  ];
+}
+
 export function buildConcatArgs(inputs: string[], output: string): string[] {
   if (inputs.length === 0) throw new Error('Geen invoer om samen te voegen');
 

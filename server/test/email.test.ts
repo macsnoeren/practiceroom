@@ -25,7 +25,7 @@ function tokenSentTo(to: string): string {
   const mail = [...outbox].reverse().find((m) => m.to === to);
   assert.ok(mail, `expected an e-mail to ${to}`);
   const match = /token=([^\s&"]+)/.exec(mail.text);
-  assert.ok(match, 'expected a token link in the e-mail');
+  assert.ok(match?.[1], 'expected a token link in the e-mail');
   return decodeURIComponent(match[1]);
 }
 

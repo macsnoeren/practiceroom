@@ -147,6 +147,8 @@ export function toRecordingDto(recording: Recording): RecordingDto {
     lessonId: recording.lessonId,
     deviceId: recording.deviceId,
     status: recording.status as RecordingStatus,
+    hasVideo: recording.hasVideo,
+    hasAudio: recording.hasAudio,
     sizeBytes: recording.sizeBytes,
     startedAt: recording.startedAt.toISOString(),
     completedAt: recording.completedAt?.toISOString() ?? null,

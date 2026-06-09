@@ -34,6 +34,19 @@ export async function ensureCompositeDir(lessonId: string): Promise<void> {
   await mkdir(dirname(compositePath(lessonId)), { recursive: true });
 }
 
+/**
+ * Path for a temporary normalised segment (a black-video or silent-audio
+ * version of a recording), written next to the composite while it is built.
+ */
+export function normalizedSegmentPath(lessonId: string, recordingId: string): string {
+  return join(root, 'composites', `${lessonId}.norm.${recordingId}.webm`);
+}
+
+/** Best-effort removal of a file (used to clean up temporary segments). */
+export async function removeFile(path: string): Promise<void> {
+  await rm(path, { force: true }).catch(() => undefined);
+}
+
 export async function compositeSize(lessonId: string): Promise<number> {
   try {
     return (await stat(compositePath(lessonId))).size;

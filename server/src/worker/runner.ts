@@ -2,8 +2,16 @@ import { spawn } from 'node:child_process';
 import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import { prisma } from '../db.js';
 import { env } from '../env.js';
-import { buildConcatArgs } from '../lib/composite.js';
-import { compositePath, compositeSize, ensureCompositeDir, recordingPath } from '../lib/storage.js';
+import { buildBlackVideoArgs, buildConcatArgs, buildSilentAudioArgs } from '../lib/composite.js';
+import type { Recording } from '@prisma/client';
+import {
+  compositePath,
+  compositeSize,
+  ensureCompositeDir,
+  normalizedSegmentPath,
+  recordingPath,
+  removeFile,
+} from '../lib/storage.js';
 
 export type JobResult = 'idle' | 'done' | 'waiting' | 'failed';
 
@@ -26,6 +34,31 @@ export function runFfmpeg(args: string[]): Promise<void> {
       else reject(new Error(`ffmpeg afgesloten met code ${code}: ${stderr.slice(-400)}`));
     });
   });
+}
+
+/**
+ * Returns a path to a segment that is guaranteed to have both a video and an
+ * audio stream. A recording captured with both is used as-is; an audio-only or
+ * video-only one is rewritten into a temp file (recorded in `temps` for
+ * cleanup) with the missing stream synthesised.
+ */
+async function normalizeSegment(
+  lessonId: string,
+  recording: Recording,
+  temps: string[],
+): Promise<string> {
+  const src = recordingPath(recording.id);
+  if (recording.hasVideo && recording.hasAudio) return src;
+  if (!recording.hasVideo && !recording.hasAudio) return src; // nothing to pad
+
+  const fixed = normalizedSegmentPath(lessonId, recording.id);
+  if (!recording.hasVideo) {
+    await runFfmpeg(buildBlackVideoArgs(src, fixed));
+  } else {
+    await runFfmpeg(buildSilentAudioArgs(src, fixed));
+  }
+  temps.push(fixed);
+  return fixed;
 }
 
 /**
@@ -70,12 +103,19 @@ export async function processQueuedJob(): Promise<JobResult> {
 
     await ensureCompositeDir(job.lessonId);
     const output = compositePath(job.lessonId);
-    await runFfmpeg(
-      buildConcatArgs(
-        completed.map((r) => recordingPath(r.id)),
-        output,
-      ),
-    );
+
+    // The concat step expects every segment to have both a video and an audio
+    // stream. Segments captured as audio-only or video-without-sound are first
+    // padded with a black frame / silent track so they stitch in cleanly.
+    const temps: string[] = [];
+    try {
+      const inputs = await Promise.all(
+        completed.map((r) => normalizeSegment(job.lessonId, r, temps)),
+      );
+      await runFfmpeg(buildConcatArgs(inputs, output));
+    } finally {
+      for (const temp of temps) await removeFile(temp);
+    }
 
     await prisma.compositeVideo.update({
       where: { id: job.id },

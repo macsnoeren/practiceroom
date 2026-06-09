@@ -3,15 +3,14 @@ import { ChunkUploader } from './upload.js';
 
 export type RecorderState = 'idle' | 'recording' | 'finishing' | 'error';
 
-const PREFERRED_MIME_TYPES = [
-  'video/webm;codecs=vp9,opus',
-  'video/webm;codecs=vp8,opus',
-  'video/webm',
-];
+const VIDEO_MIME_TYPES = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
 
-function pickMimeType(): string | undefined {
+const AUDIO_MIME_TYPES = ['audio/webm;codecs=opus', 'audio/webm'];
+
+function pickMimeType(hasVideo: boolean): string | undefined {
   if (typeof MediaRecorder === 'undefined') return undefined;
-  return PREFERRED_MIME_TYPES.find((type) => MediaRecorder.isTypeSupported(type));
+  const candidates = hasVideo ? VIDEO_MIME_TYPES : AUDIO_MIME_TYPES;
+  return candidates.find((type) => MediaRecorder.isTypeSupported(type));
 }
 
 /**
@@ -38,7 +37,9 @@ export function useRecorder(
       return;
     }
 
-    const mimeType = pickMimeType();
+    const hasVideo = currentStream.getVideoTracks().length > 0;
+    const hasAudio = currentStream.getAudioTracks().length > 0;
+    const mimeType = pickMimeType(hasVideo);
     let recorder: MediaRecorder;
     try {
       recorder = new MediaRecorder(currentStream, mimeType ? { mimeType } : undefined);
@@ -53,7 +54,10 @@ export function useRecorder(
     };
     recorder.onstop = () => {
       setState('finishing');
-      void uploader.finish(mimeType ?? 'video/webm').then(() => setState('idle'));
+      const fallback = hasVideo ? 'video/webm' : 'audio/webm';
+      void uploader
+        .finish(mimeType ?? fallback, { hasVideo, hasAudio })
+        .then(() => setState('idle'));
     };
 
     recorder.start(2000); // emit a chunk every 2 seconds

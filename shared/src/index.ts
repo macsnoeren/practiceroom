@@ -344,6 +344,8 @@ export const RecordingDtoSchema = z.object({
   lessonId: z.string(),
   deviceId: z.string(),
   status: RecordingStatusSchema,
+  hasVideo: z.boolean(),
+  hasAudio: z.boolean(),
   sizeBytes: z.number(),
   startedAt: z.string(),
   completedAt: z.string().nullable(),

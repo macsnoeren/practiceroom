@@ -56,16 +56,21 @@ export class ChunkUploader {
   }
 
   /** Wait for the queue to drain, then mark the recording complete. */
-  async finish(mimeType: string): Promise<void> {
+  async finish(mimeType: string, opts: { hasVideo: boolean; hasAudio: boolean }): Promise<void> {
     if (this.done) return;
     this.done = true;
     while (this.queue.length > 0 || this.running) await delay(200);
 
     const token = getToken();
     if (!token) return;
-    await fetch(
-      `/api/recordings/${this.recordingId}/complete?mimeType=${encodeURIComponent(mimeType)}`,
-      { method: 'POST', headers: { authorization: `Bearer ${token}` } },
-    ).catch(() => undefined);
+    const params = new URLSearchParams({
+      mimeType,
+      hasVideo: String(opts.hasVideo),
+      hasAudio: String(opts.hasAudio),
+    });
+    await fetch(`/api/recordings/${this.recordingId}/complete?${params.toString()}`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+    }).catch(() => undefined);
   }
 }

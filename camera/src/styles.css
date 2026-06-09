@@ -175,6 +175,13 @@ button:disabled {
   aspect-ratio: 16 / 9;
 }
 
+.preview-audio {
+  display: grid;
+  place-items: center;
+  color: #cbd5e1;
+  font-size: 1.1rem;
+}
+
 .card.recording {
   border-color: var(--danger);
   background: color-mix(in srgb, var(--danger) 12%, var(--surface));

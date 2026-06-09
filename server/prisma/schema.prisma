@@ -169,6 +169,8 @@ model Recording {
   deviceId       String
   status         String    @default("recording") // recording | completed | failed
   mimeType       String?
+  hasVideo       Boolean   @default(true)
+  hasAudio       Boolean   @default(true)
   receivedChunks Int       @default(0)
   sizeBytes      Int       @default(0)
   startedAt      DateTime  @default(now())
