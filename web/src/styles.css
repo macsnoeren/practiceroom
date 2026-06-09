@@ -593,6 +593,24 @@ th {
   background: var(--primary-soft);
 }
 
+/* A lesson that lapses because it falls in a holiday. */
+.lesson-item.lapsed {
+  background: var(--warning-soft);
+  border-color: color-mix(in srgb, var(--warning) 35%, transparent);
+  color: var(--muted);
+  cursor: default;
+}
+
+.lesson-item.lapsed strong {
+  text-decoration: line-through;
+}
+
+.tag-holiday {
+  background: var(--warning-soft);
+  color: var(--warning);
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
+}
+
 .lesson-detail {
   border: 1px solid var(--border);
   border-top: 0;

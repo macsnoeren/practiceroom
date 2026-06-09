@@ -33,19 +33,34 @@ export function StudentLessons({ basePath }: { basePath: string }) {
         )}
         {lessons && lessons.length > 0 && (
           <ul className="lesson-list">
-            {lessons.map((l) => (
-              <li key={l.id}>
-                <Link className="lesson-item" to={`${basePath}/${l.id}`}>
-                  <span>
-                    <strong>{l.title || 'Les'}</strong>
-                    <div className="muted">
-                      {formatWhen(l.startsAt)} · {l.durationMinutes} min · leraar {l.teacher.name}
-                    </div>
-                  </span>
-                  <span className="tag">{l.status}</span>
-                </Link>
-              </li>
-            ))}
+            {lessons.map((l) =>
+              l.holidayName ? (
+                // Lapses due to a holiday: shown for clarity, not clickable.
+                <li key={l.id}>
+                  <div className="lesson-item lapsed">
+                    <span>
+                      <strong>{l.title || 'Les'}</strong>
+                      <div className="muted">
+                        {formatWhen(l.startsAt)} · {l.durationMinutes} min · leraar {l.teacher.name}
+                      </div>
+                    </span>
+                    <span className="tag tag-holiday">Vervalt · {l.holidayName}</span>
+                  </div>
+                </li>
+              ) : (
+                <li key={l.id}>
+                  <Link className="lesson-item" to={`${basePath}/${l.id}`}>
+                    <span>
+                      <strong>{l.title || 'Les'}</strong>
+                      <div className="muted">
+                        {formatWhen(l.startsAt)} · {l.durationMinutes} min · leraar {l.teacher.name}
+                      </div>
+                    </span>
+                    <span className="tag">{l.status}</span>
+                  </Link>
+                </li>
+              ),
+            )}
           </ul>
         )}
       </div>

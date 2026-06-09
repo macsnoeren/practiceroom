@@ -161,8 +161,10 @@ export const api = {
   deleteDevice: (id: string) => requestVoid(`/api/devices/${id}`, { method: 'DELETE' }),
 
   listLessons: () => request('/api/lessons', z.array(LessonDtoSchema)),
-  // Lessons where the caller is the student (works for any role).
-  listMyLessons: () => request('/api/lessons?student=me', z.array(LessonDtoSchema)),
+  // Lessons where the caller is the student (works for any role). Includes
+  // lessons that lapse due to a holiday, marked with the holiday's name.
+  listMyLessons: () =>
+    request('/api/lessons?student=me&includeLapsed=true', z.array(LessonDtoSchema)),
   getLesson: (id: string) => request(`/api/lessons/${id}`, LessonDetailDtoSchema),
   createLesson: (input: CreateLessonInput) =>
     request('/api/lessons', LessonDtoSchema, { method: 'POST', body: JSON.stringify(input) }),

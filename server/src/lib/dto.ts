@@ -117,7 +117,7 @@ export function toMaterialDto(material: Material): MaterialDto {
   };
 }
 
-export function toLessonDto(lesson: LessonListRow): LessonDto {
+export function toLessonDto(lesson: LessonListRow, holidayName: string | null = null): LessonDto {
   return {
     id: lesson.id,
     schoolId: lesson.schoolId,
@@ -130,6 +130,7 @@ export function toLessonDto(lesson: LessonListRow): LessonDto {
     seriesId: lesson.seriesId,
     notes: lesson.notes,
     room: lesson.room ? { id: lesson.room.id, name: lesson.room.name } : null,
+    holidayName,
     createdAt: lesson.createdAt.toISOString(),
   };
 }

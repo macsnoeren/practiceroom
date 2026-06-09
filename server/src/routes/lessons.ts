@@ -15,7 +15,7 @@ import { prisma } from '../db.js';
 import { requireAuth, requireRole } from '../auth/plugin.js';
 import { badRequest, forbidden, notFound } from '../lib/errors.js';
 import { canManageLesson, canViewLesson } from '../lib/lesson-access.js';
-import { isWithinHolidays } from '../lib/dates.js';
+import { holidayAt, isWithinHolidays } from '../lib/dates.js';
 import {
   compositeResource,
   PLAYBACK_TTL_MS,
@@ -77,7 +77,12 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
     const me = requireAuth(request);
     // `?student=me` returns the lessons where the caller is the student,
     // whatever their role — a teacher can also be enrolled as a student.
-    const asStudent = (request.query as { student?: string }).student === 'me';
+    const query = request.query as { student?: string; includeLapsed?: string };
+    const asStudent = query.student === 'me';
+    // By default lessons that fall in a holiday lapse and are hidden. With
+    // `includeLapsed=true` they are returned with the holiday's name so a view
+    // (e.g. the student's overview) can show them as cancelled.
+    const includeLapsed = query.includeLapsed === 'true';
     const where = {
       schoolId: me.schoolId,
       ...(asStudent
@@ -92,10 +97,14 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
       prisma.lesson.findMany({ where, include: lessonListInclude, orderBy: { startsAt: 'asc' } }),
       prisma.holiday.findMany({
         where: { schoolId: me.schoolId },
-        select: { startsOn: true, endsOn: true },
+        select: { name: true, startsOn: true, endsOn: true },
       }),
     ]);
-    return lessons.filter((l) => !isWithinHolidays(l.startsAt, holidays)).map(toLessonDto);
+    return lessons.flatMap((l) => {
+      const holiday = holidayAt(l.startsAt, holidays);
+      if (holiday && !includeLapsed) return [];
+      return [toLessonDto(l, holiday?.name ?? null)];
+    });
   });
 
   app.get('/api/lessons/:id', async (request) => {

@@ -12,3 +12,13 @@ export function isWithinHolidays(
 ): boolean {
   return holidays.some((h) => date >= h.startsOn && date.getTime() < h.endsOn.getTime() + DAY_MS);
 }
+
+/** The holiday `date` falls in, or null. Returns the first match. */
+export function holidayAt<T extends { startsOn: Date; endsOn: Date }>(
+  date: Date,
+  holidays: T[],
+): T | null {
+  return (
+    holidays.find((h) => date >= h.startsOn && date.getTime() < h.endsOn.getTime() + DAY_MS) ?? null
+  );
+}

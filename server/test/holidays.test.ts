@@ -142,6 +142,29 @@ describe('holidays cancel lessons in the schedule', () => {
     assert.equal(await countLessons(a.student.cookie), 1);
   });
 
+  it('still lists a lapsed lesson with the holiday name when includeLapsed is set', async () => {
+    const a = await makeSchool('Cancel Lapsed', 'clap');
+    await planLesson(a.teacher.cookie, a.student.id, '2026-12-25T10:00:00.000Z');
+    await createHoliday(a.adminCookie, {
+      name: 'Kerstvakantie',
+      startsOn: '2026-12-24',
+      endsOn: '2026-12-26',
+    });
+
+    // Default: hidden for the student.
+    assert.equal(await countLessons(a.student.cookie), 0);
+
+    // With includeLapsed: returned, marked with the holiday name.
+    const withLapsed = await app.inject({
+      method: 'GET',
+      url: '/api/lessons?student=me&includeLapsed=true',
+      headers: { cookie: a.student.cookie },
+    });
+    const list = withLapsed.json() as { holidayName: string | null }[];
+    assert.equal(list.length, 1);
+    assert.equal(list[0]?.holidayName, 'Kerstvakantie');
+  });
+
   it('rejects planning a single lesson on a holiday date', async () => {
     const a = await makeSchool('Cancel B', 'cb');
     await createHoliday(a.adminCookie, {

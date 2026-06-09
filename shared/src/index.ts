@@ -352,6 +352,9 @@ export const LessonDtoSchema = z.object({
   seriesId: z.string().nullable(),
   notes: z.string().nullable(),
   room: z.object({ id: z.string(), name: z.string() }).nullable(),
+  // Set when the lesson falls within a school holiday (it then lapses); the
+  // value is the holiday's name. Null otherwise.
+  holidayName: z.string().nullable(),
   createdAt: z.string(),
 });
 export type LessonDto = z.infer<typeof LessonDtoSchema>;
