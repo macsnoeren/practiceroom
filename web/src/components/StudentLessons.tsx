@@ -13,7 +13,7 @@ export function StudentLessons() {
 
   useEffect(() => {
     api
-      .listLessons()
+      .listMyLessons()
       .then(setLessons)
       .catch((err: unknown) => setError(err instanceof ApiError ? err.message : 'Laden mislukt'));
     api

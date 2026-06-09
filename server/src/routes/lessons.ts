@@ -46,9 +46,13 @@ interface TagParams {
   tagId: string;
 }
 
-async function assertUserInSchool(id: string, schoolId: string, role: Role): Promise<void> {
-  const user = await prisma.user.findFirst({ where: { id, schoolId, role } });
-  if (!user) throw badRequest(`Geen ${role} gevonden in deze school`);
+// Any user at the location may be a lesson's student (a teacher can also take
+// lessons). Pass a role only when it must be restricted.
+async function assertUserInSchool(id: string, schoolId: string, role?: Role): Promise<void> {
+  const user = await prisma.user.findFirst({
+    where: { id, schoolId, ...(role ? { role } : {}) },
+  });
+  if (!user) throw badRequest('Onbekende gebruiker in deze school');
 }
 
 // A lesson's teacher may be a teacher OR an admin (admins teach too).
@@ -70,10 +74,18 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
   // "lapse"); removing the holiday brings them back.
   app.get('/api/lessons', async (request) => {
     const me = requireAuth(request);
+    // `?student=me` returns the lessons where the caller is the student,
+    // whatever their role — a teacher can also be enrolled as a student.
+    const asStudent = (request.query as { student?: string }).student === 'me';
     const where = {
       schoolId: me.schoolId,
-      ...(me.role === 'teacher' ? { teacherId: me.id } : {}),
-      ...(me.role === 'student' ? { studentId: me.id } : {}),
+      ...(asStudent
+        ? { studentId: me.id }
+        : me.role === 'teacher'
+          ? { teacherId: me.id }
+          : me.role === 'student'
+            ? { studentId: me.id }
+            : {}),
     };
     const [lessons, holidays] = await Promise.all([
       prisma.lesson.findMany({ where, include: lessonListInclude, orderBy: { startsAt: 'asc' } }),
@@ -109,7 +121,7 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
       const teacherId = me.role === 'teacher' ? me.id : input.teacherId;
       if (!teacherId) throw badRequest('Kies een leraar');
       await assertCanTeach(teacherId, me.schoolId);
-      await assertUserInSchool(input.studentId, me.schoolId, 'student');
+      await assertUserInSchool(input.studentId, me.schoolId);
       if (input.roomId) await assertRoomInSchool(input.roomId, me.schoolId);
 
       // Weekly recurrence: plan the same lesson for several weeks, skipping any
@@ -170,7 +182,7 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
       const existing = await prisma.lesson.findFirst({ where: { id, schoolId: me.schoolId } });
       if (!existing) throw notFound('Les niet gevonden');
       if (!canManageLesson(me, existing)) throw forbidden();
-      if (input.studentId) await assertUserInSchool(input.studentId, me.schoolId, 'student');
+      if (input.studentId) await assertUserInSchool(input.studentId, me.schoolId);
       if (input.roomId) await assertRoomInSchool(input.roomId, me.schoolId);
 
       const lesson = await prisma.lesson.update({

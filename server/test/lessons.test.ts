@@ -92,16 +92,26 @@ describe('lessons: planning, scoping and material', () => {
     assert.equal(theirs.json().length, 0);
   });
 
-  it('rejects a non-student as the student and forbids students creating lessons', async () => {
+  it('lets any user be the student but rejects unknown users and student-created lessons', async () => {
     const s = await makeSchool('Lesson B', 'lb');
 
-    const badStudent = await app.inject({
+    // A teacher can also be scheduled as a student.
+    const teacherAsStudent = await app.inject({
       method: 'POST',
       url: '/api/lessons',
       headers: { cookie: s.teacher.cookie },
       payload: { studentId: s.teacher.id, startsAt: soon(), durationMinutes: 30 },
     });
-    assert.equal(badStudent.statusCode, 400);
+    assert.equal(teacherAsStudent.statusCode, 201);
+
+    // An unknown user id is still rejected.
+    const unknown = await app.inject({
+      method: 'POST',
+      url: '/api/lessons',
+      headers: { cookie: s.teacher.cookie },
+      payload: { studentId: 'nope', startsAt: soon(), durationMinutes: 30 },
+    });
+    assert.equal(unknown.statusCode, 400);
 
     const byStudent = await app.inject({
       method: 'POST',
@@ -110,6 +120,31 @@ describe('lessons: planning, scoping and material', () => {
       payload: { studentId: s.student.id, startsAt: soon(), durationMinutes: 30 },
     });
     assert.equal(byStudent.statusCode, 403);
+  });
+
+  it('shows a teacher the lessons where they are the student via ?student=me', async () => {
+    const s = await makeSchool('Lesson MyL', 'lml');
+    // Admin plans a lesson taught by the teacher with the teacher as student too.
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/lessons',
+      headers: { cookie: s.adminCookie },
+      payload: {
+        teacherId: s.teacher.id,
+        studentId: s.teacher.id,
+        startsAt: soon(),
+        durationMinutes: 30,
+      },
+    });
+    assert.equal(created.statusCode, 201, created.body);
+
+    const mine = await app.inject({
+      method: 'GET',
+      url: '/api/lessons?student=me',
+      headers: { cookie: s.teacher.cookie },
+    });
+    assert.equal(mine.statusCode, 200);
+    assert.ok((mine.json() as { id: string }[]).some((l) => l.id === created.json().id));
   });
 
   it('selects cameras and rejects devices from another school', async () => {

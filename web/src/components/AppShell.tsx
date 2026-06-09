@@ -68,6 +68,9 @@ export function AppShell({
             <NavLink to="/lessons" className={navClass}>
               <span className="ico">🎵</span> Lessen
             </NavLink>
+            <NavLink to="/my-lessons" className={navClass}>
+              <span className="ico">🎓</span> Mijn lessen
+            </NavLink>
             <NavLink to="/devices" className={navClass}>
               <span className="ico">🎥</span> Camera&rsquo;s
             </NavLink>
@@ -110,6 +113,14 @@ export function AppShell({
                   <div className="page">
                     <LessonDashboard />
                   </div>
+                }
+              />
+              <Route
+                path="/my-lessons"
+                element={
+                  <Page title="Mijn lessen" subtitle="Lessen waarin jij zelf de student bent.">
+                    <StudentLessons />
+                  </Page>
                 }
               />
               <Route

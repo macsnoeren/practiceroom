@@ -95,7 +95,9 @@ export function LessonManagement({ isAdmin }: { isAdmin: boolean }) {
       .then(setHolidays)
       .catch(() => undefined);
     void api.listUsers().then((users) => {
-      setStudents(users.filter((u) => u.role === 'student'));
+      // Any user can be a lesson's student (a teacher can also take lessons);
+      // the teacher slot stays teachers + admins.
+      setStudents(users);
       setTeachers(users.filter((u) => u.role === 'teacher' || u.role === 'admin'));
     });
     void api
@@ -359,6 +361,7 @@ function LessonForm({
         {students.map((s) => (
           <option key={s.id} value={s.id}>
             {s.name}
+            {s.role === 'teacher' ? ' (leraar)' : s.role === 'admin' ? ' (beheerder)' : ''}
           </option>
         ))}
       </select>
