@@ -130,15 +130,16 @@ a {
   font-weight: 700;
 }
 
-/* When the brand mark is the logo image, drop the gradient placeholder. */
-img.brand-mark {
-  background: none;
+/* The wordmark logo: keep its aspect ratio, size by height. */
+.brand-logo {
+  height: 30px;
+  width: auto;
+  display: block;
   object-fit: contain;
 }
 
-.auth-brand .brand-mark {
-  width: 34px;
-  height: 34px;
+.auth-brand .brand-logo {
+  height: 48px;
 }
 
 .topbar-spacer {
