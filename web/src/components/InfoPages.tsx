@@ -7,10 +7,10 @@ import { SiteFooter } from './SiteFooter.js';
  * square brackets with your own (the data controller is normally the school).
  */
 const ORG = {
-  name: '[Organisatienaam]',
-  address: '[Adres, postcode en plaats]',
-  kvk: '[KvK-nummer]',
-  email: '[privacy@jouwdomein.nl]',
+  name: 'JMNL Innovation',
+  address: 'Dorstseweg 25b, 4854 NA Bavel',
+  kvk: '65677463',
+  email: 'privacy@jmnl.nl',
 };
 
 const LAST_UPDATED = '9 juni 2026';
