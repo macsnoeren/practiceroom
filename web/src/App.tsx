@@ -4,6 +4,7 @@ import { APP_NAME, type UserDto } from '@practiceroom/shared';
 import { ApiError, api } from './api.js';
 import { AuthScreen } from './components/AuthScreen.js';
 import { AppShell } from './components/AppShell.js';
+import { SiteFooter } from './components/SiteFooter.js';
 
 type AuthState = { kind: 'loading' } | { kind: 'authenticated'; user: UserDto } | { kind: 'anon' };
 
@@ -42,6 +43,7 @@ export function App() {
           </div>
           <AuthScreen onAuthenticated={(user) => setAuth({ kind: 'authenticated', user })} />
         </div>
+        <SiteFooter />
       </div>
     );
   }

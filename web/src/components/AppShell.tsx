@@ -11,6 +11,7 @@ import { StudentLessons } from './StudentLessons.js';
 import { HolidayManagement } from './HolidayManagement.js';
 import { RoomManagement } from './RoomManagement.js';
 import { ProfilePage } from './ProfilePage.js';
+import { SiteFooter } from './SiteFooter.js';
 
 const ROLE_LABEL: Record<UserDto['role'], string> = {
   admin: 'Beheerder',
@@ -170,6 +171,7 @@ export function AppShell({
           />
           <Route path="*" element={<Navigate to="/lessons" replace />} />
         </Routes>
+        <SiteFooter />
       </main>
     </div>
   );
