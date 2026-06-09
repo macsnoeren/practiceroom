@@ -268,6 +268,12 @@ export function LessonDashboard() {
       <div className="card">
         <h2>Aantekeningen &amp; tags</h2>
         <NotesEditor lessonId={id} initialNotes={detail.notes} />
+        {detail.studentNotes && (
+          <div className="student-notes">
+            <h3>Aantekeningen van de student</h3>
+            <p>{detail.studentNotes}</p>
+          </div>
+        )}
         <TagsPanel detail={detail} onChanged={load} />
       </div>
 

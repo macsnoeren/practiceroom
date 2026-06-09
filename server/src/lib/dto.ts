@@ -179,6 +179,7 @@ export function toCompositeVideoDto(composite: CompositeVideo): CompositeVideoDt
 export function toLessonDetailDto(lesson: LessonDetailRow): LessonDetailDto {
   return {
     ...toLessonDto(lesson),
+    studentNotes: lesson.studentNotes,
     devices: lesson.devices.map((d) => ({ id: d.device.id, name: d.device.name })),
     materials: lesson.materials.map(toMaterialDto),
     recordings: lesson.recordings.map(toRecordingDto),

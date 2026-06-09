@@ -8,6 +8,7 @@ import { LessonDashboard } from './LessonDashboard.js';
 import { DeviceManagement } from './DeviceManagement.js';
 import { UserManagement } from './UserManagement.js';
 import { StudentLessons } from './StudentLessons.js';
+import { StudentLessonDashboard } from './StudentLessonDashboard.js';
 import { HolidayManagement } from './HolidayManagement.js';
 import { RoomManagement } from './RoomManagement.js';
 import { ProfilePage } from './ProfilePage.js';
@@ -119,8 +120,16 @@ export function AppShell({
                 path="/my-lessons"
                 element={
                   <Page title="Mijn lessen" subtitle="Lessen waarin jij zelf de student bent.">
-                    <StudentLessons />
+                    <StudentLessons basePath="/my-lessons" />
                   </Page>
+                }
+              />
+              <Route
+                path="/my-lessons/:id"
+                element={
+                  <div className="page">
+                    <StudentLessonDashboard meId={user.id} backTo="/my-lessons" />
+                  </div>
                 }
               />
               <Route
@@ -163,14 +172,24 @@ export function AppShell({
               />
             </>
           ) : (
-            <Route
-              path="/lessons"
-              element={
-                <Page title="Mijn lessen" subtitle="Bekijk je geplande lessen en opnames terug.">
-                  <StudentLessons />
-                </Page>
-              }
-            />
+            <>
+              <Route
+                path="/lessons"
+                element={
+                  <Page title="Mijn lessen" subtitle="Bekijk je geplande lessen en opnames terug.">
+                    <StudentLessons basePath="/lessons" />
+                  </Page>
+                }
+              />
+              <Route
+                path="/lessons/:id"
+                element={
+                  <div className="page">
+                    <StudentLessonDashboard meId={user.id} backTo="/lessons" />
+                  </div>
+                }
+              />
+            </>
           )}
           <Route
             path="/profile"

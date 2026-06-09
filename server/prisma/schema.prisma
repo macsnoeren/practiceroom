@@ -127,6 +127,7 @@ model Lesson {
   status          String   @default("planned")
   seriesId        String? // links the lessons of one weekly-recurring series
   notes           String? // free-text lesson notes by the teacher
+  studentNotes    String? // the student's own notes/questions about the lesson
   roomId          String?
   createdAt       DateTime @default(now())
 

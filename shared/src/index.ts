@@ -285,6 +285,12 @@ export const UpdateLessonSchema = z.object({
 });
 export type UpdateLessonInput = z.infer<typeof UpdateLessonSchema>;
 
+/** The lesson's student edits their own notes/questions. */
+export const UpdateStudentNotesSchema = z.object({
+  studentNotes: z.string().max(5000).nullable(),
+});
+export type UpdateStudentNotesInput = z.infer<typeof UpdateStudentNotesSchema>;
+
 /** Replace the set of cameras that film a lesson. */
 export const SetLessonDevicesSchema = z.object({
   deviceIds: z.array(z.string()),
@@ -401,6 +407,7 @@ export const CompositeVideoDtoSchema = z.object({
 export type CompositeVideoDto = z.infer<typeof CompositeVideoDtoSchema>;
 
 export const LessonDetailDtoSchema = LessonDtoSchema.extend({
+  studentNotes: z.string().nullable(),
   devices: z.array(DeviceMiniSchema),
   materials: z.array(MaterialDtoSchema),
   recordings: z.array(RecordingDtoSchema),

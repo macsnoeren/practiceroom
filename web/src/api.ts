@@ -171,6 +171,11 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(input),
     }),
+  updateStudentNotes: (id: string, studentNotes: string | null) =>
+    request(`/api/lessons/${id}/student-notes`, LessonDetailDtoSchema, {
+      method: 'PATCH',
+      body: JSON.stringify({ studentNotes }),
+    }),
   deleteLesson: (id: string, series = false) =>
     requestVoid(`/api/lessons/${id}${series ? '?series=true' : ''}`, { method: 'DELETE' }),
   setLessonDevices: (id: string, deviceIds: string[]) =>

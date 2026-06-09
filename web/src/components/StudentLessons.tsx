@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
-import { type HolidayDto, type LessonDetailDto, type LessonDto } from '@practiceroom/shared';
+import { Link } from 'react-router-dom';
+import { type HolidayDto, type LessonDto } from '@practiceroom/shared';
 import { ApiError, api } from '../api.js';
 import { formatDateRange, formatWhen } from '../format.js';
-import { LessonPlayer } from './LessonPlayer.js';
-import { CompositePlayer } from './CompositePlayer.js';
 
-export function StudentLessons() {
+/** A student's (or any user's) list of lessons they attend. Each lesson links
+ * to their own lesson dashboard at `${basePath}/:id`. */
+export function StudentLessons({ basePath }: { basePath: string }) {
   const [lessons, setLessons] = useState<LessonDto[] | null>(null);
   const [holidays, setHolidays] = useState<HolidayDto[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -35,11 +35,7 @@ export function StudentLessons() {
           <ul className="lesson-list">
             {lessons.map((l) => (
               <li key={l.id}>
-                <button
-                  type="button"
-                  className={`lesson-item${selectedId === l.id ? ' selected' : ''}`}
-                  onClick={() => setSelectedId(selectedId === l.id ? null : l.id)}
-                >
+                <Link className="lesson-item" to={`${basePath}/${l.id}`}>
                   <span>
                     <strong>{l.title || 'Les'}</strong>
                     <div className="muted">
@@ -47,8 +43,7 @@ export function StudentLessons() {
                     </div>
                   </span>
                   <span className="tag">{l.status}</span>
-                </button>
-                {selectedId === l.id && <StudentLessonDetail lessonId={l.id} />}
+                </Link>
               </li>
             ))}
           </ul>
@@ -72,58 +67,5 @@ export function StudentLessons() {
         )}
       </div>
     </>
-  );
-}
-
-function StudentLessonDetail({ lessonId }: { lessonId: string }) {
-  const [detail, setDetail] = useState<LessonDetailDto | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    api
-      .getLesson(lessonId)
-      .then(setDetail)
-      .catch((err: unknown) => setError(err instanceof ApiError ? err.message : 'Laden mislukt'));
-  }, [lessonId]);
-
-  if (error) return <p className="error">{error}</p>;
-  if (!detail) return <p className="muted">Laden…</p>;
-
-  const hasRecording = detail.recordings.some((r) => r.status === 'completed');
-
-  return (
-    <div className="lesson-detail">
-      <CompositePlayer lessonId={detail.id} composite={detail.composite} />
-      <LessonPlayer
-        recordings={detail.recordings}
-        deviceName={(id) => detail.devices.find((d) => d.id === id)?.name ?? 'Camera'}
-      />
-      {!hasRecording && !detail.composite && (
-        <p className="muted">Na de les verschijnt hier de opname om terug te kijken.</p>
-      )}
-
-      <h3>Lesmateriaal</h3>
-      {detail.materials.length === 0 && <p className="muted">Nog geen materiaal.</p>}
-      {detail.materials.length > 0 && (
-        <ul className="material-list">
-          {detail.materials.map((m) => (
-            <li key={m.id}>
-              <div>
-                <strong>{m.title}</strong>
-                {m.url && (
-                  <>
-                    {' '}
-                    <a href={m.url} target="_blank" rel="noreferrer">
-                      link
-                    </a>
-                  </>
-                )}
-                {m.note && <div className="muted">{m.note}</div>}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
   );
 }

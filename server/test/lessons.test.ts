@@ -430,4 +430,41 @@ describe('rooms', () => {
     });
     assert.equal(bad.statusCode, 400);
   });
+
+  it('lets only the lesson student edit their own notes; staff can read them', async () => {
+    const s = await makeSchool('Lesson Notes', 'lnotes');
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/lessons',
+      headers: { cookie: s.teacher.cookie },
+      payload: { studentId: s.student.id, startsAt: soon(), durationMinutes: 30 },
+    });
+    const lessonId = (created.json() as { id: string }).id;
+
+    // The student writes their own notes.
+    const saved = await app.inject({
+      method: 'PATCH',
+      url: `/api/lessons/${lessonId}/student-notes`,
+      headers: { cookie: s.student.cookie },
+      payload: { studentNotes: 'Maat 12 lukt nog niet' },
+    });
+    assert.equal(saved.statusCode, 200);
+    assert.equal(saved.json().studentNotes, 'Maat 12 lukt nog niet');
+
+    // The teacher can read them but not write them.
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/api/lessons/${lessonId}`,
+      headers: { cookie: s.teacher.cookie },
+    });
+    assert.equal(detail.json().studentNotes, 'Maat 12 lukt nog niet');
+
+    const byTeacher = await app.inject({
+      method: 'PATCH',
+      url: `/api/lessons/${lessonId}/student-notes`,
+      headers: { cookie: s.teacher.cookie },
+      payload: { studentNotes: 'hack' },
+    });
+    assert.equal(byTeacher.statusCode, 403);
+  });
 });

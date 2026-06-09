@@ -8,6 +8,7 @@ import {
   SOCKET_EVENTS,
   StartRecordingInputSchema,
   UpdateLessonSchema,
+  UpdateStudentNotesSchema,
   type Role,
 } from '@practiceroom/shared';
 import { prisma } from '../db.js';
@@ -268,6 +269,25 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
       return toLessonDetailDto(updated);
     },
   );
+
+  // The lesson's student edits their own notes/questions (any role can be a
+  // student). Staff can read these but not change them.
+  app.patch('/api/lessons/:id/student-notes', async (request) => {
+    const me = requireAuth(request);
+    const { id } = request.params as IdParam;
+    const input = UpdateStudentNotesSchema.parse(request.body);
+
+    const lesson = await prisma.lesson.findFirst({ where: { id, schoolId: me.schoolId } });
+    if (!lesson) throw notFound('Les niet gevonden');
+    if (lesson.studentId !== me.id) throw forbidden('Alleen de student van deze les');
+
+    const updated = await prisma.lesson.update({
+      where: { id },
+      data: { studentNotes: input.studentNotes },
+      include: lessonDetailInclude,
+    });
+    return toLessonDetailDto(updated);
+  });
 
   app.post(
     '/api/lessons/:id/materials',
