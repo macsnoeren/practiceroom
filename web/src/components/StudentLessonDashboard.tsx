@@ -5,6 +5,7 @@ import { ApiError, api } from '../api.js';
 import { formatWhen } from '../format.js';
 import { CompositePlayer } from './CompositePlayer.js';
 import { LessonPlayer } from './LessonPlayer.js';
+import { MaterialView } from './MaterialView.js';
 
 /** A student's own per-lesson dashboard: watch the recording back, see the
  * material, and keep personal notes/questions about the lesson. */
@@ -85,20 +86,7 @@ export function StudentLessonDashboard({ meId, backTo }: { meId: string; backTo:
         {detail.materials.length > 0 && (
           <ul className="material-list">
             {detail.materials.map((m) => (
-              <li key={m.id}>
-                <div>
-                  <strong>{m.title}</strong>
-                  {m.url && (
-                    <>
-                      {' '}
-                      <a href={m.url} target="_blank" rel="noreferrer">
-                        link
-                      </a>
-                    </>
-                  )}
-                  {m.note && <div className="muted">{m.note}</div>}
-                </div>
-              </li>
+              <MaterialView key={m.id} material={m} />
             ))}
           </ul>
         )}

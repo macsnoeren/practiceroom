@@ -7,6 +7,7 @@ import {
   LessonDetailDtoSchema,
   LessonDtoSchema,
   LessonTagDtoSchema,
+  LibraryItemDtoSchema,
   MaterialDtoSchema,
   PairingCodeResultSchema,
   PlaybackUrlSchema,
@@ -18,8 +19,11 @@ import {
   InvitePreviewSchema,
   type CreateHolidayInput,
   type CreateLessonInput,
+  type CreateLibraryItemInput,
   type CreateMaterialInput,
   type CreateUserInput,
+  type SaveFromLessonInput,
+  type UpdateLibraryItemInput,
   type LoginInput,
   type RegisterSchoolInput,
   type SchoolDto,
@@ -199,6 +203,53 @@ export const api = {
     }),
   deleteTag: (lessonId: string, tagId: string) =>
     requestVoid(`/api/lessons/${lessonId}/tags/${tagId}`, { method: 'DELETE' }),
+  attachLibraryToLesson: (lessonId: string, libraryItemId: string) =>
+    request(`/api/lessons/${lessonId}/materials/from-library`, MaterialDtoSchema, {
+      method: 'POST',
+      body: JSON.stringify({ libraryItemId }),
+    }),
+
+  // Teacher video library.
+  listLibrary: () => request('/api/library', z.array(LibraryItemDtoSchema)),
+  createLibraryItem: (input: CreateLibraryItemInput) =>
+    request('/api/library', LibraryItemDtoSchema, { method: 'POST', body: JSON.stringify(input) }),
+  saveLessonToLibrary: (lessonId: string, input: SaveFromLessonInput) =>
+    request(`/api/library/from-lesson/${lessonId}`, LibraryItemDtoSchema, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  updateLibraryItem: (id: string, input: UpdateLibraryItemInput) =>
+    request(`/api/library/${id}`, LibraryItemDtoSchema, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  deleteLibraryItem: (id: string) => requestVoid(`/api/library/${id}`, { method: 'DELETE' }),
+  getLibraryPlaybackUrl: (id: string) =>
+    request(`/api/library/${id}/playback-url`, PlaybackUrlSchema),
+  /** Upload a video File to an existing (uploading) library item, in chunks. */
+  uploadLibraryFile: async (id: string, file: File, onProgress?: (pct: number) => void) => {
+    const CHUNK = 8 * 1024 * 1024;
+    let index = 0;
+    for (let offset = 0; offset < file.size; offset += CHUNK) {
+      const blob = file.slice(offset, offset + CHUNK);
+      const res = await fetch(`/api/library/${id}/chunks?index=${index}`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/octet-stream' },
+        body: blob,
+      });
+      if (!res.ok) throw new ApiError(res.status, 'Upload mislukt');
+      index += 1;
+      onProgress?.(Math.min(100, Math.round(((offset + blob.size) / file.size) * 100)));
+    }
+    const type = file.type || 'video/mp4';
+    const done = await fetch(`/api/library/${id}/complete?mimeType=${encodeURIComponent(type)}`, {
+      method: 'POST',
+      credentials: 'same-origin',
+    });
+    if (!done.ok) throw new ApiError(done.status, 'Voltooien mislukt');
+    return LibraryItemDtoSchema.parse(await done.json());
+  },
 
   startRecording: (lessonId: string, deviceId: string) =>
     request(`/api/lessons/${lessonId}/recording/start`, RecordingDtoSchema, {

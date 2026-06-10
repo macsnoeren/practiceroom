@@ -646,6 +646,28 @@ th {
   border-bottom: 1px solid var(--border);
 }
 
+/* A material/library row that may also contain a video below the text. */
+.material-list li.material-item {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.material-body {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.save-to-library,
+.attach-library {
+  margin-top: 0.75rem;
+}
+
+.attach-library .row {
+  gap: 0.5rem;
+}
+
 .lesson-actions {
   margin-top: 1.25rem;
   border-top: 1px solid var(--border);

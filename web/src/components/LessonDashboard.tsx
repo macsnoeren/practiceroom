@@ -4,6 +4,7 @@ import {
   CreateMaterialSchema,
   type DeviceDto,
   type LessonDetailDto,
+  type LibraryItemDto,
   type RoomDto,
 } from '@practiceroom/shared';
 import { ApiError, api } from '../api.js';
@@ -11,6 +12,7 @@ import { formatBytes, formatWhen } from '../format.js';
 import { usePresence } from '../usePresence.js';
 import { CompositePlayer } from './CompositePlayer.js';
 import { LessonPlayer } from './LessonPlayer.js';
+import { MaterialView } from './MaterialView.js';
 
 /** Full per-lesson dashboard for staff: cameras, recording, notes, playback. */
 export function LessonDashboard() {
@@ -283,6 +285,7 @@ export function LessonDashboard() {
         {detail.composite === null && detail.recordings.length === 0 && (
           <p className="muted">Nog geen opnames.</p>
         )}
+        {detail.composite?.status === 'completed' && <SaveToLibrary lessonId={id} />}
       </div>
 
       <div className="card">
@@ -319,6 +322,7 @@ export function LessonDashboard() {
         <h2>Lesmateriaal</h2>
         <MaterialList detail={detail} onChanged={load} />
         <MaterialForm lessonId={id} onAdded={load} />
+        <AttachFromLibrary lessonId={id} onAttached={load} />
       </div>
 
       <div className="card">
@@ -459,32 +463,124 @@ function MaterialList({ detail, onChanged }: { detail: LessonDetailDto; onChange
   return (
     <ul className="material-list">
       {detail.materials.map((m) => (
-        <li key={m.id}>
-          <div>
-            <strong>{m.title}</strong>
-            {m.url && (
-              <>
-                {' '}
-                <a href={m.url} target="_blank" rel="noreferrer">
-                  link
-                </a>
-              </>
-            )}
-            {m.note && <div className="muted">{m.note}</div>}
-          </div>
-          <button
-            type="button"
-            className="linkbtn danger"
-            onClick={async () => {
-              await api.deleteMaterial(detail.id, m.id);
-              onChanged();
-            }}
-          >
-            x
-          </button>
-        </li>
+        <MaterialView
+          key={m.id}
+          material={m}
+          onDelete={async () => {
+            await api.deleteMaterial(detail.id, m.id);
+            onChanged();
+          }}
+        />
       ))}
     </ul>
+  );
+}
+
+/** Save the lesson's combined video into the teacher's own library. */
+function SaveToLibrary({ lessonId }: { lessonId: string }) {
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    if (!title.trim()) return;
+    setStatus('saving');
+    try {
+      await api.saveLessonToLibrary(lessonId, {
+        title: title.trim(),
+        description: description.trim() || undefined,
+      });
+      setStatus('saved');
+      setOpen(false);
+      setTitle('');
+      setDescription('');
+    } catch {
+      setStatus('error');
+    }
+  }
+
+  return (
+    <div className="save-to-library">
+      {!open ? (
+        <button type="button" className="secondary" onClick={() => setOpen(true)}>
+          Opslaan in mijn bibliotheek
+        </button>
+      ) : (
+        <form onSubmit={save} className="material-form">
+          <input
+            placeholder="Titel voor de bibliotheek"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            aria-label="Titel"
+          />
+          <input
+            placeholder="Beschrijving (optioneel)"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            aria-label="Beschrijving"
+          />
+          <button type="submit" disabled={status === 'saving'}>
+            {status === 'saving' ? 'Opslaan…' : 'Opslaan'}
+          </button>
+          <button type="button" className="linkbtn" onClick={() => setOpen(false)}>
+            Annuleren
+          </button>
+        </form>
+      )}
+      {status === 'saved' && <span className="success"> Opgeslagen in je bibliotheek.</span>}
+      {status === 'error' && <span className="error"> Opslaan mislukt.</span>}
+    </div>
+  );
+}
+
+/** Attach a video from the teacher's library to this lesson. */
+function AttachFromLibrary({ lessonId, onAttached }: { lessonId: string; onAttached: () => void }) {
+  const [items, setItems] = useState<LibraryItemDto[]>([]);
+  const [selected, setSelected] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .listLibrary()
+      .then(setItems)
+      .catch(() => undefined);
+  }, []);
+
+  async function attach() {
+    if (!selected) return;
+    setError(null);
+    try {
+      await api.attachLibraryToLesson(lessonId, selected);
+      setSelected('');
+      onAttached();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Koppelen mislukt');
+    }
+  }
+
+  if (items.length === 0) return null;
+
+  return (
+    <div className="attach-library">
+      <label htmlFor="attach-lib">Uit mijn bibliotheek toevoegen</label>
+      <div className="row">
+        <select id="attach-lib" value={selected} onChange={(e) => setSelected(e.target.value)}>
+          <option value="">— kies een video —</option>
+          {items.map((it) => (
+            <option key={it.id} value={it.id}>
+              {it.title}
+              {it.kind === 'link' ? ' (link)' : ''}
+            </option>
+          ))}
+        </select>
+        <button type="button" onClick={attach} disabled={!selected}>
+          Toevoegen
+        </button>
+      </div>
+      {error && <p className="error">{error}</p>}
+    </div>
   );
 }
 

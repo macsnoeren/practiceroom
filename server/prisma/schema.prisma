@@ -22,6 +22,7 @@ model School {
   lessons  Lesson[]
   holidays Holiday[]
   rooms    Room[]
+  library  LibraryItem[]
 }
 
 /// A physical room/location where lessons take place. School-scoped.
@@ -66,11 +67,12 @@ model User {
   totpEnabled   Boolean  @default(false)
   createdAt     DateTime @default(now())
 
-  school         School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  school         School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   sessions       Session[]
   tokens         Token[]
-  teacherLessons Lesson[]  @relation("TeacherLessons")
-  studentLessons Lesson[]  @relation("StudentLessons")
+  teacherLessons Lesson[]      @relation("TeacherLessons")
+  studentLessons Lesson[]      @relation("StudentLessons")
+  library        LibraryItem[]
 
   @@index([schoolId])
 }
@@ -212,18 +214,47 @@ model LessonTag {
   @@index([lessonId])
 }
 
-/// Teaching material attached to a lesson (a link and/or a note for now).
+/// Teaching material attached to a lesson: a link, a note, and/or a video from
+/// the teacher's library.
 model Material {
-  id        String   @id @default(cuid())
-  lessonId  String
-  title     String
-  url       String?
-  note      String?
-  createdAt DateTime @default(now())
+  id            String   @id @default(cuid())
+  lessonId      String
+  title         String
+  url           String?
+  note          String?
+  libraryItemId String?
+  createdAt     DateTime @default(now())
 
-  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  lesson  Lesson       @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  library LibraryItem? @relation(fields: [libraryItemId], references: [id], onDelete: SetNull)
 
   @@index([lessonId])
+  @@index([libraryItemId])
+}
+
+/// A video in a teacher's personal library, reusable across lessons. It is
+/// either an uploaded/recorded file (streamed via signed URLs, like recordings)
+/// or an external link.
+model LibraryItem {
+  id             String   @id @default(cuid())
+  schoolId       String
+  ownerId        String
+  title          String
+  description    String?
+  kind           String // 'file' | 'link'
+  url            String? // for 'link'
+  mimeType       String? // for 'file'
+  sizeBytes      Int      @default(0)
+  receivedChunks Int      @default(0)
+  status         String   @default("ready") // 'uploading' | 'ready'
+  createdAt      DateTime @default(now())
+
+  school    School     @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  owner     User       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  materials Material[]
+
+  @@index([schoolId])
+  @@index([ownerId])
 }
 
 /// A server-side login session, referenced by an opaque httpOnly cookie token.

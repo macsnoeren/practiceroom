@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { CompositeVideoDto } from '@practiceroom/shared';
 import { ApiError, api } from '../api.js';
+import { SecureVideo } from './SecureVideo.js';
 
 /** Plays the single combined lesson video once the worker has produced it. */
 export function CompositePlayer({
@@ -45,7 +46,7 @@ export function CompositePlayer({
         </p>
       )}
       {error && <p className="error">{error}</p>}
-      {url && <video key={url} className="player" controls src={url} />}
+      {url && <SecureVideo src={url} />}
     </div>
   );
 }

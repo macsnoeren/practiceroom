@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { RecordingDto } from '@practiceroom/shared';
 import { ApiError, api } from '../api.js';
+import { SecureVideo } from './SecureVideo.js';
 
 /**
  * Plays back the completed recordings of a lesson, one camera angle at a time.
@@ -59,7 +60,7 @@ export function LessonPlayer({
         </div>
       )}
       {error && <p className="error">{error}</p>}
-      {url && <video key={url} className="player" controls src={url} />}
+      {url && <SecureVideo src={url} />}
     </div>
   );
 }

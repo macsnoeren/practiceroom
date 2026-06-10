@@ -11,6 +11,7 @@ import { StudentLessons } from './StudentLessons.js';
 import { StudentLessonDashboard } from './StudentLessonDashboard.js';
 import { HolidayManagement } from './HolidayManagement.js';
 import { RoomManagement } from './RoomManagement.js';
+import { LibraryManagement } from './LibraryManagement.js';
 import { ProfilePage } from './ProfilePage.js';
 import { SiteFooter } from './SiteFooter.js';
 
@@ -77,6 +78,9 @@ export function AppShell({
             </NavLink>
             <NavLink to="/rooms" className={navClass}>
               <span className="ico">🚪</span> Lokalen
+            </NavLink>
+            <NavLink to="/library" className={navClass}>
+              <span className="ico">🎬</span> Bibliotheek
             </NavLink>
             <NavLink to="/holidays" className={navClass}>
               <span className="ico">🏖️</span> Vakanties
@@ -148,6 +152,17 @@ export function AppShell({
                 element={
                   <Page title="Lokalen" subtitle="Beheer de lokalen waar lessen plaatsvinden.">
                     <RoomManagement canManage={isAdmin} />
+                  </Page>
+                }
+              />
+              <Route
+                path="/library"
+                element={
+                  <Page
+                    title="Bibliotheek"
+                    subtitle="Bewaar video's en koppel ze later als lesmateriaal."
+                  >
+                    <LibraryManagement />
                   </Page>
                 }
               />

@@ -3,6 +3,7 @@ import type {
   Device,
   Holiday,
   LessonTag,
+  LibraryItem,
   Material,
   Prisma,
   Recording,
@@ -19,6 +20,9 @@ import type {
   LessonDto,
   LessonStatus,
   LessonTagDto,
+  LibraryItemDto,
+  LibraryKind,
+  LibraryStatus,
   MaterialDto,
   RecordingDto,
   RecordingStatus,
@@ -87,7 +91,10 @@ export const lessonDetailInclude = {
   student: personSelect,
   room: roomSelect,
   devices: { include: { device: { select: { id: true, name: true } } } },
-  materials: { orderBy: { createdAt: 'asc' } },
+  materials: {
+    orderBy: { createdAt: 'asc' },
+    include: { library: { select: { id: true, kind: true } } },
+  },
   recordings: { orderBy: { startedAt: 'asc' } },
   tags: { orderBy: { at: 'asc' } },
   composite: true,
@@ -106,14 +113,34 @@ export function toLessonTagDto(tag: LessonTag): LessonTagDto {
   };
 }
 
-export function toMaterialDto(material: Material): MaterialDto {
+type MaterialRow = Material & { library?: { id: string; kind: string } | null };
+
+export function toMaterialDto(material: MaterialRow): MaterialDto {
   return {
     id: material.id,
     lessonId: material.lessonId,
     title: material.title,
     url: material.url,
     note: material.note,
+    library: material.library
+      ? { id: material.library.id, kind: material.library.kind as LibraryKind }
+      : null,
     createdAt: material.createdAt.toISOString(),
+  };
+}
+
+export function toLibraryItemDto(item: LibraryItem): LibraryItemDto {
+  return {
+    id: item.id,
+    ownerId: item.ownerId,
+    title: item.title,
+    description: item.description,
+    kind: item.kind as LibraryKind,
+    url: item.url,
+    mimeType: item.mimeType,
+    sizeBytes: item.sizeBytes,
+    status: item.status as LibraryStatus,
+    createdAt: item.createdAt.toISOString(),
   };
 }
 

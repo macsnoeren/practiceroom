@@ -6,6 +6,7 @@ export const PLAYBACK_TTL_MS = 60 * 60 * 1000; // 1 hour
 /** Distinct resource strings so a recording signature can't open a composite. */
 export const recordingResource = (recordingId: string) => `rec:${recordingId}`;
 export const compositeResource = (lessonId: string) => `composite:${lessonId}`;
+export const libraryResource = (itemId: string) => `lib:${itemId}`;
 
 /**
  * Signs/verifies short-lived playback URLs. The signature binds a resource to

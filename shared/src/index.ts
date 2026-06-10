@@ -315,15 +315,79 @@ export const CreateMaterialSchema = z
   });
 export type CreateMaterialInput = z.infer<typeof CreateMaterialSchema>;
 
+export const LIBRARY_KINDS = ['file', 'link'] as const;
+export const LibraryKindSchema = z.enum(LIBRARY_KINDS);
+export type LibraryKind = (typeof LIBRARY_KINDS)[number];
+
 export const MaterialDtoSchema = z.object({
   id: z.string(),
   lessonId: z.string(),
   title: z.string(),
   url: z.string().nullable(),
   note: z.string().nullable(),
+  // Present when the material is a video from the teacher's library.
+  library: z.object({ id: z.string(), kind: LibraryKindSchema }).nullable(),
   createdAt: z.string(),
 });
 export type MaterialDto = z.infer<typeof MaterialDtoSchema>;
+
+/* ---- Teacher video library ---------------------------------------------- */
+
+const libraryLink = z
+  .string()
+  .trim()
+  .min(1)
+  .max(2000)
+  .refine((u) => /^https?:\/\//i.test(u), { message: 'Alleen http(s)-links zijn toegestaan' });
+
+/** Create a library item: an external link, or a file you then upload. */
+export const CreateLibraryItemSchema = z
+  .object({
+    title: z.string().trim().min(1).max(160),
+    description: z.string().trim().max(2000).optional(),
+    kind: LibraryKindSchema,
+    url: libraryLink.optional(),
+  })
+  .refine((i) => i.kind !== 'link' || !!i.url, {
+    message: 'Een link is verplicht',
+    path: ['url'],
+  });
+export type CreateLibraryItemInput = z.infer<typeof CreateLibraryItemSchema>;
+
+/** Save a lesson's combined video into the library. */
+export const SaveFromLessonSchema = z.object({
+  title: z.string().trim().min(1).max(160),
+  description: z.string().trim().max(2000).optional(),
+});
+export type SaveFromLessonInput = z.infer<typeof SaveFromLessonSchema>;
+
+export const UpdateLibraryItemSchema = z.object({
+  title: z.string().trim().min(1).max(160).optional(),
+  description: z.string().trim().max(2000).nullable().optional(),
+});
+export type UpdateLibraryItemInput = z.infer<typeof UpdateLibraryItemSchema>;
+
+/** Attach a library item to a lesson as extra material. */
+export const AttachLibrarySchema = z.object({ libraryItemId: z.string().min(1) });
+export type AttachLibraryInput = z.infer<typeof AttachLibrarySchema>;
+
+export const LIBRARY_STATUSES = ['uploading', 'ready'] as const;
+export const LibraryStatusSchema = z.enum(LIBRARY_STATUSES);
+export type LibraryStatus = (typeof LIBRARY_STATUSES)[number];
+
+export const LibraryItemDtoSchema = z.object({
+  id: z.string(),
+  ownerId: z.string(),
+  title: z.string(),
+  description: z.string().nullable(),
+  kind: LibraryKindSchema,
+  url: z.string().nullable(),
+  mimeType: z.string().nullable(),
+  sizeBytes: z.number(),
+  status: LibraryStatusSchema,
+  createdAt: z.string(),
+});
+export type LibraryItemDto = z.infer<typeof LibraryItemDtoSchema>;
 
 /** A timeline marker placed during a lesson (for later review/editing). */
 export const CreateTagSchema = z.object({

@@ -1,8 +1,36 @@
-import { appendFile, mkdir, rm, stat } from 'node:fs/promises';
+import { appendFile, copyFile, mkdir, rm, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { env } from '../env.js';
 
 const root = resolve(env.STORAGE_DIR);
+
+/** Absolute path of a library item's video file (no extension; mime is stored). */
+export function libraryPath(itemId: string): string {
+  return join(root, 'library', `${itemId}`);
+}
+
+/** Append a chunk to a library file, creating the folder on first write. */
+export async function appendLibraryChunk(itemId: string, data: Buffer): Promise<void> {
+  const path = libraryPath(itemId);
+  await mkdir(dirname(path), { recursive: true });
+  await appendFile(path, data);
+}
+
+export async function librarySize(itemId: string): Promise<number> {
+  try {
+    return (await stat(libraryPath(itemId))).size;
+  } catch {
+    return 0;
+  }
+}
+
+/** Copy a lesson's composite video into the library as a standalone file. */
+export async function copyCompositeToLibrary(lessonId: string, itemId: string): Promise<number> {
+  const dest = libraryPath(itemId);
+  await mkdir(dirname(dest), { recursive: true });
+  await copyFile(compositePath(lessonId), dest);
+  return librarySize(itemId);
+}
 
 /** Absolute path of a recording's video file. */
 export function recordingPath(recordingId: string): string {

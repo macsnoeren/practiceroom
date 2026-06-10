@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import {
+  AttachLibrarySchema,
   CreateLessonSchema,
   CreateMaterialSchema,
   CreateTagSchema,
@@ -317,6 +318,38 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
           url: input.url ?? null,
           note: input.note ?? null,
         },
+      });
+      return reply.code(201).send(toMaterialDto(material));
+    },
+  );
+
+  // Attach a video from the teacher's own library to a lesson as extra material.
+  app.post(
+    '/api/lessons/:id/materials/from-library',
+    { preHandler: requireRole('admin', 'teacher') },
+    async (request, reply) => {
+      const me = requireAuth(request);
+      const { id } = request.params as IdParam;
+      const { libraryItemId } = AttachLibrarySchema.parse(request.body);
+
+      const lesson = await prisma.lesson.findFirst({ where: { id, schoolId: me.schoolId } });
+      if (!lesson) throw notFound('Les niet gevonden');
+      if (!canManageLesson(me, lesson)) throw forbidden();
+
+      const item = await prisma.libraryItem.findFirst({
+        where: { id: libraryItemId, ownerId: me.id, schoolId: me.schoolId },
+      });
+      if (!item) throw notFound('Bibliotheekitem niet gevonden');
+
+      const material = await prisma.material.create({
+        data: {
+          lessonId: id,
+          title: item.title,
+          note: item.description,
+          url: item.kind === 'link' ? item.url : null,
+          libraryItemId: item.id,
+        },
+        include: { library: { select: { id: true, kind: true } } },
       });
       return reply.code(201).send(toMaterialDto(material));
     },
