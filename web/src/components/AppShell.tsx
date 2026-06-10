@@ -17,6 +17,7 @@ import { ProfilePage } from './ProfilePage.js';
 import { SiteFooter } from './SiteFooter.js';
 
 const ROLE_LABEL: Record<UserDto['role'], string> = {
+  superadmin: 'Sitebeheerder',
   admin: 'Beheerder',
   teacher: 'Leraar',
   student: 'Student',
@@ -29,13 +30,17 @@ export function AppShell({
   user,
   onLogout,
   onUserUpdate,
+  onLeaveSchool,
 }: {
   user: UserDto;
   onLogout: () => void;
   onUserUpdate: (u: UserDto) => void;
+  onLeaveSchool?: () => void;
 }) {
-  const isStaff = user.role !== 'student';
-  const isAdmin = user.role === 'admin';
+  // A superadmin who has entered a school acts as that school's admin.
+  const isSuperadmin = user.role === 'superadmin';
+  const isAdmin = user.role === 'admin' || isSuperadmin;
+  const isStaff = isAdmin || user.role === 'teacher';
   const { theme, toggle } = useTheme();
 
   return (
@@ -103,7 +108,15 @@ export function AppShell({
       </nav>
 
       <main className="main">
-        {!user.emailVerified && <VerifyBanner />}
+        {isSuperadmin && onLeaveSchool && (
+          <div className="banner">
+            <span>Je beheert deze school als sitebeheerder.</span>
+            <button type="button" className="linkbtn" onClick={onLeaveSchool}>
+              ← Terug naar sitebeheer
+            </button>
+          </div>
+        )}
+        {!isSuperadmin && !user.emailVerified && <VerifyBanner />}
         <Routes>
           {isStaff ? (
             <>

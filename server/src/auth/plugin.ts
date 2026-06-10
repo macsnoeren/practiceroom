@@ -1,9 +1,10 @@
 import type { FastifyInstance, FastifyRequest, preHandlerHookHandler } from 'fastify';
-import type { Role } from '@practiceroom/shared';
+import type { Role, UserRole } from '@practiceroom/shared';
 import { forbidden, unauthorized } from '../lib/errors.js';
-import { getSessionUser, SESSION_COOKIE } from './session.js';
+import { getSessionContext, SESSION_COOKIE } from './session.js';
 
-/** The authenticated user as attached to each request (no password hash). */
+/** The authenticated user as attached to each request (no password hash). For a
+ * superadmin this represents the school they have entered (acting as its admin). */
 export interface AuthUser {
   id: string;
   schoolId: string;
@@ -12,25 +13,62 @@ export interface AuthUser {
   role: Role;
 }
 
+/** The raw signed-in identity, including a site-wide superadmin (no school). */
+export interface Principal {
+  userId: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  schoolId: string | null; // the user's own school (null for a superadmin)
+  activeSchoolId: string | null; // the school a superadmin has entered
+}
+
 declare module 'fastify' {
   interface FastifyRequest {
     authUser: AuthUser | null;
+    principal: Principal | null;
   }
 }
 
 /**
- * Attaches `request.authUser` (or null) on every request by resolving the
- * session cookie. Must be registered AFTER @fastify/cookie so cookies are
- * already parsed.
+ * Attaches `request.principal` (raw identity) and `request.authUser` (effective
+ * school-scoped user) on every request by resolving the session cookie. A
+ * superadmin only gets an `authUser` once they have entered a school, where
+ * they then act as that school's admin.
  */
 export async function registerAuth(app: FastifyInstance): Promise<void> {
   app.decorateRequest('authUser', null);
+  app.decorateRequest('principal', null);
 
   app.addHook('onRequest', async (request) => {
     const token = request.cookies[SESSION_COOKIE];
     if (!token) return;
-    const user = await getSessionUser(token);
-    if (user) {
+    const ctx = await getSessionContext(token);
+    if (!ctx) return;
+    const { user, activeSchoolId } = ctx;
+
+    request.principal = {
+      userId: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role as UserRole,
+      schoolId: user.schoolId,
+      activeSchoolId,
+    };
+
+    if (user.role === 'superadmin') {
+      // A superadmin only has a school context once they have entered one;
+      // there they act as the school's admin.
+      if (activeSchoolId) {
+        request.authUser = {
+          id: user.id,
+          schoolId: activeSchoolId,
+          email: user.email,
+          name: user.name,
+          role: 'admin',
+        };
+      }
+    } else if (user.schoolId) {
       request.authUser = {
         id: user.id,
         schoolId: user.schoolId,
@@ -46,6 +84,14 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
 export function requireAuth(request: FastifyRequest): AuthUser {
   if (!request.authUser) throw unauthorized();
   return request.authUser;
+}
+
+/** Use inside a handler to require a site-wide superadmin. */
+export function requireSuperadmin(request: FastifyRequest): Principal {
+  const principal = request.principal;
+  if (!principal) throw unauthorized();
+  if (principal.role !== 'superadmin') throw forbidden();
+  return principal;
 }
 
 /** preHandler that requires the user to be authenticated and have one of the roles. */

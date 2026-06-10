@@ -16,6 +16,13 @@ export const ROLES = ['admin', 'teacher', 'student'] as const;
 export const RoleSchema = z.enum(ROLES);
 export type Role = (typeof ROLES)[number];
 
+// A site-wide superadmin is a user that belongs to no school. It is not an
+// assignable role (you cannot pick it in the UI), so it lives in its own,
+// wider enum used only for reading a user back.
+export const USER_ROLES = [...ROLES, 'superadmin'] as const;
+export const UserRoleSchema = z.enum(USER_ROLES);
+export type UserRole = (typeof USER_ROLES)[number];
+
 /* -------------------------------------------------------------------------- */
 /* Health                                                                     */
 /* -------------------------------------------------------------------------- */
@@ -133,12 +140,15 @@ export type TwoFactorSetup = z.infer<typeof TwoFactorSetupSchema>;
 /** A user as exposed to clients. Never includes the password hash. */
 export const UserDtoSchema = z.object({
   id: z.string(),
-  schoolId: z.string(),
+  schoolId: z.string().nullable(),
   email: z.string(),
   name: z.string(),
-  role: RoleSchema,
+  role: UserRoleSchema,
   emailVerified: z.boolean(),
   totpEnabled: z.boolean(),
+  // For a superadmin: the school they have currently entered (acting as admin),
+  // or null when on the site dashboard. Always null for normal users.
+  activeSchoolId: z.string().nullable(),
   createdAt: z.string(),
 });
 export type UserDto = z.infer<typeof UserDtoSchema>;
@@ -149,6 +159,37 @@ export const SchoolDtoSchema = z.object({
   createdAt: z.string(),
 });
 export type SchoolDto = z.infer<typeof SchoolDtoSchema>;
+
+/* -------------------------------------------------------------------------- */
+/* Site administration (superadmin)                                           */
+/* -------------------------------------------------------------------------- */
+
+/** One-time creation of the first site-wide administrator. */
+export const SiteAdminSetupSchema = z.object({
+  name: nameField,
+  email: emailField,
+  password: passwordField,
+});
+export type SiteAdminSetupInput = z.infer<typeof SiteAdminSetupSchema>;
+
+export const EnterSchoolSchema = z.object({ schoolId: z.string().min(1) });
+export type EnterSchoolInput = z.infer<typeof EnterSchoolSchema>;
+
+/** A school in the site-admin overview, with a few counts. */
+export const SchoolSummaryDtoSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  userCount: z.number(),
+  lessonCount: z.number(),
+  createdAt: z.string(),
+});
+export type SchoolSummaryDto = z.infer<typeof SchoolSummaryDtoSchema>;
+
+/** A user in the global (cross-school) site-admin user list. */
+export const GlobalUserDtoSchema = UserDtoSchema.extend({
+  schoolName: z.string().nullable(),
+});
+export type GlobalUserDto = z.infer<typeof GlobalUserDtoSchema>;
 
 /* -------------------------------------------------------------------------- */
 /* Devices (cameras/microphones)                                              */

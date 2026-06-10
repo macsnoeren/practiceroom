@@ -65,17 +65,17 @@ model Holiday {
 /// native enums; it is validated against the shared `Role` contract in code.
 model User {
   id           String   @id @default(cuid())
-  schoolId     String
+  schoolId     String? // null for a site-wide superadmin (belongs to no school)
   email        String   @unique // globally unique so login needs only email + password
   name         String
-  role         String // 'admin' | 'teacher' | 'student'
+  role         String // 'admin' | 'teacher' | 'student' | 'superadmin'
   passwordHash  String
   emailVerified Boolean  @default(false)
   totpSecret    String? // TOTP shared secret (set while/after enabling 2FA)
   totpEnabled   Boolean  @default(false)
   createdAt     DateTime @default(now())
 
-  school         School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  school         School?       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   sessions       Session[]
   tokens         Token[]
   teacherLessons Lesson[]      @relation("TeacherLessons")
@@ -269,6 +269,9 @@ model LibraryItem {
 model Session {
   id        String   @id // high-entropy random token (also the cookie value)
   userId    String
+  // For a superadmin: the school they have currently "entered" (acting as its
+  // admin). Null = managing the site / no school selected.
+  activeSchoolId String?
   expiresAt DateTime
   createdAt DateTime @default(now())
 

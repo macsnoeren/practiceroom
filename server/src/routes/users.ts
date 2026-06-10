@@ -55,7 +55,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       where: { schoolId: me.schoolId },
       orderBy: { createdAt: 'asc' },
     });
-    return users.map(toUserDto);
+    return users.map((u) => toUserDto(u));
   });
 
   // Admin edits a user in their school (name, email, role, password reset).

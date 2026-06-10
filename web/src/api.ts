@@ -10,6 +10,8 @@ import {
   LibraryItemDtoSchema,
   MaterialDtoSchema,
   SchoolSettingsDtoSchema,
+  SchoolSummaryDtoSchema,
+  GlobalUserDtoSchema,
   PairingCodeResultSchema,
   PlaybackUrlSchema,
   RecordingDtoSchema,
@@ -25,6 +27,7 @@ import {
   type CreateUserInput,
   type BrandingSlot,
   type SaveFromLessonInput,
+  type SiteAdminSetupInput,
   type UpdateLibraryItemInput,
   type UpdateSettingsInput,
   type LoginInput,
@@ -116,6 +119,25 @@ export const api = {
       body: JSON.stringify(input),
     }),
   logout: () => request('/api/auth/logout', OkSchema, { method: 'POST' }),
+
+  // Site administration (superadmin).
+  setupStatus: () => request('/api/admin/setup-status', z.object({ exists: z.boolean() })),
+  setupSiteAdmin: (input: SiteAdminSetupInput) =>
+    request('/api/admin/setup', UserDtoSchema, { method: 'POST', body: JSON.stringify(input) }),
+  listSchools: () => request('/api/admin/schools', z.array(SchoolSummaryDtoSchema)),
+  enterSchool: (schoolId: string) =>
+    request('/api/admin/enter', UserDtoSchema, {
+      method: 'POST',
+      body: JSON.stringify({ schoolId }),
+    }),
+  leaveSchool: () => request('/api/admin/leave', UserDtoSchema, { method: 'POST' }),
+  adminListUsers: () => request('/api/admin/users', z.array(GlobalUserDtoSchema)),
+  adminUpdateUser: (id: string, input: UpdateUserInput) =>
+    request(`/api/admin/users/${id}`, GlobalUserDtoSchema, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  adminDeleteUser: (id: string) => requestVoid(`/api/admin/users/${id}`, { method: 'DELETE' }),
   createUser: (input: CreateUserInput) =>
     request('/api/users', UserDtoSchema, { method: 'POST', body: JSON.stringify(input) }),
   listUsers: () => request('/api/users', z.array(UserDtoSchema)),

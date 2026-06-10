@@ -9,7 +9,7 @@ import {
 } from '@practiceroom/shared';
 import { prisma } from '../db.js';
 import { corsOrigins } from '../env.js';
-import { getSessionUser, SESSION_COOKIE } from '../auth/session.js';
+import { getSessionContext, SESSION_COOKIE } from '../auth/session.js';
 import { hashToken } from '../lib/device.js';
 
 /** Lets HTTP routes ask which devices are currently connected. */
@@ -108,15 +108,21 @@ export function setupRealtime(app: FastifyInstance): void {
 
       const sessionId = readSessionId(socket.handshake.headers.cookie);
       if (sessionId) {
-        const user = await getSessionUser(sessionId);
-        if (user) {
-          socket.data = {
-            kind: 'user',
-            userId: user.id,
-            schoolId: user.schoolId,
-            role: user.role as Role,
-          } satisfies SocketData;
-          return next();
+        const ctx = await getSessionContext(sessionId);
+        if (ctx) {
+          const { user, activeSchoolId } = ctx;
+          // A superadmin's school context is the school they have entered; a
+          // normal user's is their own. No school context = no realtime access.
+          const schoolId = user.role === 'superadmin' ? activeSchoolId : user.schoolId;
+          if (schoolId) {
+            socket.data = {
+              kind: 'user',
+              userId: user.id,
+              schoolId,
+              role: (user.role === 'superadmin' ? 'admin' : user.role) as Role,
+            } satisfies SocketData;
+            return next();
+          }
         }
       }
       next(new Error('unauthorized'));

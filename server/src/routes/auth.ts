@@ -108,10 +108,12 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/api/auth/me', async (request) => {
-    const authUser = requireAuth(request);
-    const user = await prisma.user.findUnique({ where: { id: authUser.id } });
+    // Use the raw principal so a superadmin without an entered school still works.
+    const principal = request.principal;
+    if (!principal) throw unauthorized();
+    const user = await prisma.user.findUnique({ where: { id: principal.userId } });
     if (!user) throw unauthorized();
-    return toUserDto(user);
+    return toUserDto(user, principal.activeSchoolId);
   });
 
   // A user updates their own profile (name, email, password).

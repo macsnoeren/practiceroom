@@ -20,17 +20,19 @@ import type {
   LessonDto,
   LessonStatus,
   LessonTagDto,
+  GlobalUserDto,
   LibraryItemDto,
   LibraryKind,
   LibraryStatus,
   MaterialDto,
   RecordingDto,
   RecordingStatus,
-  Role,
   RoomDto,
   SchoolDto,
   SchoolSettingsDto,
+  SchoolSummaryDto,
   UserDto,
+  UserRole,
 } from '@practiceroom/shared';
 
 /** Format a Date as a date-only string (YYYY-MM-DD, UTC). */
@@ -38,18 +40,36 @@ function toDateOnly(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-/** Map a database user to the client-facing DTO. Never leaks the password hash. */
-export function toUserDto(user: User): UserDto {
+/** Map a database user to the client-facing DTO. Never leaks the password hash.
+ * `activeSchoolId` is only meaningful for a superadmin (the school they entered). */
+export function toUserDto(user: User, activeSchoolId: string | null = null): UserDto {
   return {
     id: user.id,
     schoolId: user.schoolId,
     email: user.email,
     name: user.name,
-    role: user.role as Role,
+    role: user.role as UserRole,
     emailVerified: user.emailVerified,
     totpEnabled: user.totpEnabled,
+    activeSchoolId,
     createdAt: user.createdAt.toISOString(),
   };
+}
+
+export function toSchoolSummaryDto(
+  school: School & { _count?: { users: number; lessons: number } },
+): SchoolSummaryDto {
+  return {
+    id: school.id,
+    name: school.name,
+    userCount: school._count?.users ?? 0,
+    lessonCount: school._count?.lessons ?? 0,
+    createdAt: school.createdAt.toISOString(),
+  };
+}
+
+export function toGlobalUserDto(user: User & { school?: { name: string } | null }): GlobalUserDto {
+  return { ...toUserDto(user), schoolName: user.school?.name ?? null };
 }
 
 export function toSchoolDto(school: School): SchoolDto {

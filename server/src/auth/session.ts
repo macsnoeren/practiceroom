@@ -18,6 +18,13 @@ export async function createSession(userId: string): Promise<{ id: string; expir
 
 /** Resolve a session token to its user, deleting it if expired. */
 export async function getSessionUser(sessionId: string): Promise<User | null> {
+  return (await getSessionContext(sessionId))?.user ?? null;
+}
+
+/** Like getSessionUser, but also exposes the superadmin's entered school. */
+export async function getSessionContext(
+  sessionId: string,
+): Promise<{ user: User; activeSchoolId: string | null } | null> {
   const session = await prisma.session.findUnique({
     where: { id: sessionId },
     include: { user: true },
@@ -27,7 +34,12 @@ export async function getSessionUser(sessionId: string): Promise<User | null> {
     await deleteSession(sessionId);
     return null;
   }
-  return session.user;
+  return { user: session.user, activeSchoolId: session.activeSchoolId };
+}
+
+/** Set (or clear) the school a superadmin session is currently acting within. */
+export async function setActiveSchool(sessionId: string, schoolId: string | null): Promise<void> {
+  await prisma.session.updateMany({ where: { id: sessionId }, data: { activeSchoolId: schoolId } });
 }
 
 export async function deleteSession(sessionId: string): Promise<void> {

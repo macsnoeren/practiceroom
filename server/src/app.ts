@@ -9,6 +9,7 @@ import { HttpError } from './lib/errors.js';
 import { registerAuth } from './auth/plugin.js';
 import { healthRoutes } from './routes/health.js';
 import { authRoutes } from './routes/auth.js';
+import { adminRoutes } from './routes/admin.js';
 import { userRoutes } from './routes/users.js';
 import { deviceRoutes } from './routes/devices.js';
 import { lessonRoutes } from './routes/lessons.js';
@@ -74,6 +75,7 @@ export async function buildApp() {
   // Routes.
   await app.register(healthRoutes);
   await app.register(authRoutes);
+  await app.register(adminRoutes);
   await app.register(userRoutes);
   await app.register(deviceRoutes);
   await app.register(lessonRoutes);

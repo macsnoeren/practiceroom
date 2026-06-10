@@ -260,6 +260,11 @@ a {
   padding: 1.75rem;
 }
 
+/* Site-admin dashboard: topbar + content, no sidebar. */
+.site-admin {
+  min-height: 100vh;
+}
+
 .page {
   max-width: 880px;
   margin: 0 auto;

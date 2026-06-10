@@ -9,6 +9,7 @@ import { ApiError, api } from '../api.js';
 import { Modal } from './Modal.js';
 
 const ROLE_LABEL: Record<UserDto['role'], string> = {
+  superadmin: 'Sitebeheerder',
   admin: 'Beheerder',
   teacher: 'Leraar',
   student: 'Student',
@@ -197,9 +198,12 @@ function EditUserForm({
   isSelf: boolean;
   onSaved: () => void;
 }) {
+  type AssignableRole = 'admin' | 'teacher' | 'student';
   const [name, setName] = useState(user.name);
   const [email, setEmail] = useState(user.email);
-  const [role, setRole] = useState<UserDto['role']>(user.role);
+  const [role, setRole] = useState<AssignableRole>(
+    user.role === 'superadmin' ? 'admin' : user.role,
+  );
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -252,7 +256,7 @@ function EditUserForm({
       <select
         id="eu-role"
         value={role}
-        onChange={(e) => setRole(e.target.value as UserDto['role'])}
+        onChange={(e) => setRole(e.target.value as AssignableRole)}
         disabled={isSelf}
       >
         <option value="student">Student</option>
