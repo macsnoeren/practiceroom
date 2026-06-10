@@ -19,6 +19,35 @@ function timeOf(iso: string): string {
   return new Date(iso).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
 }
 
+// Remember selections across reloads: the planning form's last-used choices and
+// the calendar's filters. Best-effort — storage can fail (private mode, quota).
+const LESSON_DEFAULTS_KEY = 'pr:lessonDefaults';
+const LESSON_FILTERS_KEY = 'pr:lessonFilters';
+
+type Selection = { studentId?: string; teacherId?: string; roomId?: string };
+
+function loadSelection(key: string): Selection {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as Selection) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveSelection(key: string, selection: Selection) {
+  try {
+    localStorage.setItem(key, JSON.stringify(selection));
+  } catch {
+    // best-effort; ignore storage failures
+  }
+}
+
+/** Keep a remembered id only while it still exists in the current list. */
+function existingId<T extends { id: string }>(list: T[], id: string | undefined): string {
+  return id && list.some((x) => x.id === id) ? id : '';
+}
+
 function DayColumn({
   day,
   holidays,
@@ -74,10 +103,16 @@ export function LessonManagement({ isAdmin }: { isAdmin: boolean }) {
 
   const [view, setView] = useState<View>('week');
   const [anchor, setAnchor] = useState<Date>(() => new Date());
-  const [studentId, setStudentId] = useState('');
-  const [teacherId, setTeacherId] = useState('');
-  const [roomId, setRoomId] = useState('');
+  const savedFilters = useMemo(() => loadSelection(LESSON_FILTERS_KEY), []);
+  const [studentId, setStudentId] = useState(savedFilters.studentId ?? '');
+  const [teacherId, setTeacherId] = useState(savedFilters.teacherId ?? '');
+  const [roomId, setRoomId] = useState(savedFilters.roomId ?? '');
   const [planDate, setPlanDate] = useState<string | null>(null); // non-null = modal open
+
+  // Persist the calendar filters so the view comes back the way you left it.
+  useEffect(() => {
+    saveSelection(LESSON_FILTERS_KEY, { studentId, teacherId, roomId });
+  }, [studentId, teacherId, roomId]);
 
   const refresh = useCallback(async () => {
     setError(null);
@@ -310,9 +345,10 @@ function LessonForm({
   initialDate?: string;
   onCreated: () => void;
 }) {
-  const [studentId, setStudentId] = useState('');
-  const [teacherId, setTeacherId] = useState('');
-  const [roomId, setRoomId] = useState('');
+  const defaults = useMemo(() => loadSelection(LESSON_DEFAULTS_KEY), []);
+  const [studentId, setStudentId] = useState(() => existingId(students, defaults.studentId));
+  const [teacherId, setTeacherId] = useState(() => existingId(teachers, defaults.teacherId));
+  const [roomId, setRoomId] = useState(() => existingId(rooms, defaults.roomId));
   const [title, setTitle] = useState('');
   const [startsAt, setStartsAt] = useState(initialDate ?? '');
   const [duration, setDuration] = useState(30);
@@ -345,6 +381,7 @@ function LessonForm({
     setBusy(true);
     try {
       await api.createLesson(parsed.data);
+      saveSelection(LESSON_DEFAULTS_KEY, { studentId, teacherId, roomId });
       onCreated();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Plannen mislukt');

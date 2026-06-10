@@ -5,12 +5,15 @@
   --border-strong: #d4d8df;
   --text: #0f1222;
   --muted: #6b7280;
-  --primary: #5b54e6;
-  --primary-hover: #4b44d4;
-  --primary-soft: #ecebfd;
+  --primary: #5a37e0;
+  --primary-hover: #4a2bc8;
+  --primary-soft: #e9e5fb;
   --danger: #dc2626;
-  --radius: 14px;
-  --radius-sm: 9px;
+  --accent: #11a7e6;
+  --gradient-brand: linear-gradient(135deg, #6d4bf0 0%, #5a37e0 40%, #11a7e6 120%);
+  --shadow-brand: 0 8px 22px rgba(90, 55, 224, 0.32);
+  --radius: 16px;
+  --radius-sm: 10px;
 
   color-scheme: light;
   font-family:
@@ -38,7 +41,20 @@
     --primary-hover: #a59ffb;
     --primary-soft: #211f3a;
     --danger: #f87171;
+    --accent: #2dd4bf;
+    --gradient-brand: linear-gradient(135deg, #8b85f5 0%, #6d63f0 45%, #2dd4bf 130%);
+    --shadow-brand: 0 8px 22px rgba(0, 0, 0, 0.5);
     color-scheme: dark;
+  }
+}
+
+/* Respect users who prefer less motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
   }
 }
 
@@ -66,10 +82,11 @@ h1 {
 
 h1::before {
   content: 'P';
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
-  background: linear-gradient(135deg, var(--primary), #7c6df2);
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--gradient-brand);
+  box-shadow: var(--shadow-brand);
   color: #fff;
   display: grid;
   place-items: center;
@@ -124,30 +141,60 @@ input#code {
 
 button {
   margin-top: 1rem;
-  padding: 0.55rem 1rem;
+  padding: 0.6rem 1.1rem;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  background: var(--primary);
+  background: var(--gradient-brand);
+  box-shadow: var(--shadow-brand);
   color: #fff;
   font: inherit;
   font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.16s ease,
+    filter 0.16s ease;
 }
 
 button:hover {
-  background: var(--primary-hover);
+  transform: translateY(-1px);
+  filter: brightness(1.05);
 }
 
 button.secondary {
   background: var(--surface);
   color: var(--text);
   border-color: var(--border-strong);
+  box-shadow: none;
+}
+
+button.secondary:hover {
+  filter: none;
+  background: var(--bg);
 }
 
 button:disabled {
-  opacity: 0.55;
+  opacity: 0.5;
   cursor: default;
+  box-shadow: none;
+  transform: none;
+  filter: none;
+}
+
+/* The "recording" card pulses so the room knows the camera is live. */
+.card.recording {
+  animation: cam-rec-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes cam-rec-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 40%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--danger) 0%, transparent);
+  }
 }
 
 .error {

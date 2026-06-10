@@ -153,106 +153,102 @@ export function LessonDashboard() {
 
   return (
     <div>
-      <div className="card control-room">
-        <div className="row">
-          <div>
-            <h2>Regiekamer</h2>
-            <div className="muted">{detail.title || 'Les'}</div>
+      {!finished && (
+        <div className="card control-room">
+          <div className="row">
+            <div>
+              <h2>Regiekamer</h2>
+              <div className="muted">{detail.title || 'Les'}</div>
+            </div>
+            {activeId ? (
+              <span className="tag rec">● opname loopt</span>
+            ) : (
+              <span className="tag">standby</span>
+            )}
           </div>
-          {activeId ? (
-            <span className="tag rec">● opname loopt</span>
-          ) : (
-            <span className="tag">standby</span>
-          )}
-        </div>
 
-        {finished ? (
-          <p className="muted">Deze les is afgerond — opnemen is niet meer mogelijk.</p>
-        ) : (
           <p className="muted">
             Klik op een camera om de opname te starten. Klik nog eens om te stoppen, of klik een
             andere camera om over te schakelen. Eén camera tegelijk; &ldquo;Les afronden&rdquo;
             maakt er één video van.
           </p>
-        )}
 
-        {detail.devices.length === 0 ? (
-          <p className="muted">
-            Nog geen camera&rsquo;s aan deze les gekoppeld — kies ze hieronder.
-          </p>
-        ) : (
-          <>
+          {detail.devices.length === 0 ? (
             <p className="muted">
-              <strong>Test:</strong> verschijnt er beeld in de tegel en beweegt de geluidsbalk
-              wanneer er geluid is, dan werken de camera en microfoon.
+              Nog geen camera&rsquo;s aan deze les gekoppeld — kies ze hieronder.
             </p>
-            <div className="cam-grid">
-              {detail.devices.map((d) => {
-                const isOnline = online.has(d.id);
-                const isActive = activeId === d.id;
-                const frame = frames[d.id];
-                const clickable = !finished && (isOnline || isActive);
-                const gainPct = Math.round((gains[d.id] ?? 1) * 100);
-                return (
-                  <div key={d.id} className="cam-cell">
-                    <button
-                      type="button"
-                      className={`cam-tile${isActive ? ' recording' : ''}${isOnline ? '' : ' offline'}`}
-                      disabled={!clickable}
-                      onClick={() => (isActive ? void stopActive() : void startOn(d.id))}
-                    >
-                      {frame ? (
-                        <img className="cam-tile-img" src={frame} alt={`Beeld van ${d.name}`} />
-                      ) : (
-                        <div className="cam-tile-img placeholder">
-                          {isOnline ? 'Wachten op beeld…' : 'Offline'}
-                        </div>
-                      )}
-                      <div className="cam-tile-bar">
-                        <span className="cam-tile-name">{d.name}</span>
-                        {isActive ? (
-                          <span className="tag rec">● REC</span>
-                        ) : isOnline ? (
-                          <span className="tag tag-ok">● online</span>
+          ) : (
+            <>
+              <p className="muted">
+                <strong>Test:</strong> verschijnt er beeld in de tegel en beweegt de geluidsbalk
+                wanneer er geluid is, dan werken de camera en microfoon.
+              </p>
+              <div className="cam-grid">
+                {detail.devices.map((d) => {
+                  const isOnline = online.has(d.id);
+                  const isActive = activeId === d.id;
+                  const frame = frames[d.id];
+                  const clickable = isOnline || isActive;
+                  const gainPct = Math.round((gains[d.id] ?? 1) * 100);
+                  return (
+                    <div key={d.id} className="cam-cell">
+                      <button
+                        type="button"
+                        className={`cam-tile${isActive ? ' recording' : ''}${isOnline ? '' : ' offline'}`}
+                        disabled={!clickable}
+                        onClick={() => (isActive ? void stopActive() : void startOn(d.id))}
+                      >
+                        {frame ? (
+                          <img className="cam-tile-img" src={frame} alt={`Beeld van ${d.name}`} />
                         ) : (
-                          <span className="tag">offline</span>
-                        )}
-                      </div>
-                    </button>
-                    {isOnline && (
-                      <>
-                        <div className="cam-level" title="Geluidsniveau (test)" aria-hidden>
-                          <span>🔊</span>
-                          <div className="level-track">
-                            <div
-                              className="level-fill"
-                              style={{ width: `${Math.round((levels[d.id] ?? 0) * 100)}%` }}
-                            />
+                          <div className="cam-tile-img placeholder">
+                            {isOnline ? 'Wachten op beeld…' : 'Offline'}
                           </div>
+                        )}
+                        <div className="cam-tile-bar">
+                          <span className="cam-tile-name">{d.name}</span>
+                          {isActive ? (
+                            <span className="tag rec">● REC</span>
+                          ) : isOnline ? (
+                            <span className="tag tag-ok">● online</span>
+                          ) : (
+                            <span className="tag">offline</span>
+                          )}
                         </div>
-                        <div className="cam-volume" title="Microfoonvolume">
-                          <span aria-hidden>🎙️</span>
-                          <input
-                            type="range"
-                            min={0}
-                            max={200}
-                            step={5}
-                            value={gainPct}
-                            aria-label={`Microfoonvolume ${d.name}`}
-                            onChange={(e) => setGain(d.id, Number(e.target.value) / 100)}
-                          />
-                          <span className="cam-volume-val">{gainPct}%</span>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        )}
+                      </button>
+                      {isOnline && (
+                        <>
+                          <div className="cam-level" title="Geluidsniveau (test)" aria-hidden>
+                            <span>🔊</span>
+                            <div className="level-track">
+                              <div
+                                className="level-fill"
+                                style={{ width: `${Math.round((levels[d.id] ?? 0) * 100)}%` }}
+                              />
+                            </div>
+                          </div>
+                          <div className="cam-volume" title="Microfoonvolume">
+                            <span aria-hidden>🎙️</span>
+                            <input
+                              type="range"
+                              min={0}
+                              max={200}
+                              step={5}
+                              value={gainPct}
+                              aria-label={`Microfoonvolume ${d.name}`}
+                              onChange={(e) => setGain(d.id, Number(e.target.value) / 100)}
+                            />
+                            <span className="cam-volume-val">{gainPct}%</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
 
-        {!finished && (
           <div className="recording-buttons">
             {activeId && (
               <button type="button" className="secondary" onClick={() => void stopActive()}>
@@ -270,50 +266,51 @@ export function LessonDashboard() {
               Vernieuwen
             </button>
           </div>
-        )}
 
-        {error && <p className="error">{error}</p>}
+          {error && <p className="error">{error}</p>}
 
-        <details className="cam-picker">
-          <summary>Camera&rsquo;s kiezen</summary>
-          {devices.length === 0 && <p className="muted">Nog geen apparaten geregistreerd.</p>}
-          {devices.map((d) => (
-            <label key={d.id} className="checkbox">
-              <input
-                type="checkbox"
-                checked={detail.devices.some((x) => x.id === d.id)}
-                onChange={(e) => toggleDevice(d.id, e.target.checked)}
-              />
-              {d.name}
-              {online.has(d.id) && <span className="tag tag-ok">● online</span>}
-            </label>
-          ))}
-        </details>
-
-        {detail.recordings.length > 0 && (
-          <ul className="material-list">
-            {detail.recordings.map((r, i) => (
-              <li key={r.id}>
-                <div>
-                  Segment {i + 1}: {deviceName(r.deviceId)} <span className="tag">{r.status}</span>{' '}
-                  {!r.hasVideo && <span className="tag">alleen geluid</span>}
-                  {r.hasVideo && !r.hasAudio && <span className="tag">zonder geluid</span>}{' '}
-                  {r.sizeBytes > 0 && <span className="muted">{formatBytes(r.sizeBytes)}</span>}
-                </div>
-                {r.status !== 'recording' && (
-                  <button
-                    type="button"
-                    className="linkbtn danger"
-                    onClick={() => void removeSegment(r.id)}
-                  >
-                    Verwijderen
-                  </button>
-                )}
-              </li>
+          <details className="cam-picker">
+            <summary>Camera&rsquo;s kiezen</summary>
+            {devices.length === 0 && <p className="muted">Nog geen apparaten geregistreerd.</p>}
+            {devices.map((d) => (
+              <label key={d.id} className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={detail.devices.some((x) => x.id === d.id)}
+                  onChange={(e) => toggleDevice(d.id, e.target.checked)}
+                />
+                {d.name}
+                {online.has(d.id) && <span className="tag tag-ok">● online</span>}
+              </label>
             ))}
-          </ul>
-        )}
-      </div>
+          </details>
+
+          {detail.recordings.length > 0 && (
+            <ul className="material-list">
+              {detail.recordings.map((r, i) => (
+                <li key={r.id}>
+                  <div>
+                    Segment {i + 1}: {deviceName(r.deviceId)}{' '}
+                    <span className="tag">{r.status}</span>{' '}
+                    {!r.hasVideo && <span className="tag">alleen geluid</span>}
+                    {r.hasVideo && !r.hasAudio && <span className="tag">zonder geluid</span>}{' '}
+                    {r.sizeBytes > 0 && <span className="muted">{formatBytes(r.sizeBytes)}</span>}
+                  </div>
+                  {r.status !== 'recording' && (
+                    <button
+                      type="button"
+                      className="linkbtn danger"
+                      onClick={() => void removeSegment(r.id)}
+                    >
+                      Verwijderen
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       <div className="card">
         <h2>Aantekeningen &amp; tags</h2>
