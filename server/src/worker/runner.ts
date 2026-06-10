@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
-import { writeFile } from 'node:fs/promises';
+import { access, writeFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import { prisma } from '../db.js';
 import { env } from '../env.js';
@@ -26,6 +27,23 @@ import {
 } from '../lib/storage.js';
 
 export type JobResult = 'idle' | 'done' | 'waiting' | 'failed';
+
+// Bundled default intro/outro clips, used when a school has not set its own.
+// Resolved relative to this module so it works in dev (src) and in the built
+// image (dist); both sit two levels under server/, next to assets/.
+const DEFAULT_BRANDING: Record<BrandingSlot, string> = {
+  intro: fileURLToPath(new URL('../../assets/branding/intro.mkv', import.meta.url)),
+  outro: fileURLToPath(new URL('../../assets/branding/outro.mkv', import.meta.url)),
+};
+
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function ffmpegPath(): string {
   return env.FFMPEG_PATH || ffmpegInstaller.path;
@@ -84,11 +102,15 @@ async function brandingInput(
   lessonId: string,
   temps: string[],
 ): Promise<string | null> {
-  if (!school) return null;
-  const mime = slot === 'intro' ? school.introMimeType : school.outroMimeType;
-  if (!mime) return null;
-  const src = brandingPath(school.id, slot);
-  if (!(await brandingExists(school.id, slot))) return null;
+  // Use the school's own clip when set, otherwise the bundled default.
+  let src: string | null = null;
+  const mime = slot === 'intro' ? school?.introMimeType : school?.outroMimeType;
+  if (school && mime && (await brandingExists(school.id, slot))) {
+    src = brandingPath(school.id, slot);
+  } else if (await fileExists(DEFAULT_BRANDING[slot])) {
+    src = DEFAULT_BRANDING[slot];
+  }
+  if (!src) return null;
 
   const { hasVideo, hasAudio } = await probeStreams(src);
   if (!hasVideo && !hasAudio) return null;

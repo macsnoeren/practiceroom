@@ -37,3 +37,5 @@ storage-test/
 *.mkv
 *.mp4
 *.webm
+# …but the bundled default intro/outro clips DO belong in git
+!server/assets/branding/*.mkv
