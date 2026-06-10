@@ -578,7 +578,20 @@ export const SOCKET_EVENTS = {
   micSetGain: 'mic:set-gain',
   /** device -> server -> staff: report a camera's current microphone gain. */
   micGain: 'mic:gain',
+  /** device -> server -> staff: a camera's live microphone level (for testing). */
+  micLevel: 'mic:level',
 } as const;
+
+/** A 0–1 microphone level for the control room's live meter. */
+const levelField = z.number().min(0).max(1);
+
+/** device -> server: its current mic level. */
+export const MicLevelInputSchema = z.object({ level: levelField });
+export type MicLevelInput = z.infer<typeof MicLevelInputSchema>;
+
+/** server -> staff: a camera's mic level, tagged with its device. */
+export const MicLevelSchema = z.object({ deviceId: z.string(), level: levelField });
+export type MicLevel = z.infer<typeof MicLevelSchema>;
 
 /** A microphone gain multiplier: 0 = muted, 1 = unchanged, up to 2 = +100%. */
 const gainField = z.number().min(0).max(2);

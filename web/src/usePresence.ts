@@ -5,6 +5,7 @@ import {
   DeviceOfflineSchema,
   DeviceStatusUpdateSchema,
   MicGainSchema,
+  MicLevelSchema,
   OnlineDeviceSchema,
   PresenceSnapshotSchema,
   SOCKET_EVENTS,
@@ -22,6 +23,7 @@ export function usePresence({ collectFrames = false }: { collectFrames?: boolean
   const [statuses, setStatuses] = useState<Record<string, DeviceState>>({});
   const [frames, setFrames] = useState<Record<string, string>>({});
   const [gains, setGains] = useState<Record<string, number>>({});
+  const [levels, setLevels] = useState<Record<string, number>>({});
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
@@ -70,6 +72,12 @@ export function usePresence({ collectFrames = false }: { collectFrames?: boolean
           setGains((prev) => ({ ...prev, [parsed.data.deviceId]: parsed.data.gain }));
         }
       });
+      socket.on(SOCKET_EVENTS.micLevel, (raw: unknown) => {
+        const parsed = MicLevelSchema.safeParse(raw);
+        if (parsed.success) {
+          setLevels((prev) => ({ ...prev, [parsed.data.deviceId]: parsed.data.level }));
+        }
+      });
     }
 
     return () => {
@@ -83,5 +91,5 @@ export function usePresence({ collectFrames = false }: { collectFrames?: boolean
     socketRef.current?.emit(SOCKET_EVENTS.micSetGain, { deviceId, gain });
   }, []);
 
-  return { online, statuses, frames, gains, setGain };
+  return { online, statuses, frames, gains, levels, setGain };
 }

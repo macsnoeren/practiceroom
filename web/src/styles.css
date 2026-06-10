@@ -266,11 +266,24 @@ a {
 
 .main {
   padding: 1.75rem;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Sticky footer: pin the footer links to the bottom of the screen. */
+.main > .site-footer {
+  margin-top: auto;
 }
 
 /* Site-admin dashboard: topbar + content, no sidebar. */
 .site-admin {
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.site-admin .main {
+  flex: 1;
 }
 
 .inline-form {
@@ -322,12 +335,22 @@ a {
 /* ------------------------------------------------------------------ auth */
 
 .auth-page {
+  position: relative;
   min-height: 100vh;
   display: grid;
   place-items: center;
   padding: 1.5rem;
   background:
     radial-gradient(1200px 500px at 50% -10%, var(--primary-soft) 0%, transparent 60%), var(--bg);
+}
+
+/* Footer pinned to the bottom of the auth/login screen. */
+.auth-page > .site-footer {
+  position: absolute;
+  left: 1.5rem;
+  right: 1.5rem;
+  bottom: 0.5rem;
+  margin-top: 0;
 }
 
 .auth-card {
@@ -1080,6 +1103,28 @@ th {
   flex: 1;
   margin: 0;
   accent-color: var(--primary);
+}
+
+.cam-level {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.level-track {
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.level-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--success), var(--warning) 80%, var(--danger));
+  transition: width 0.1s linear;
 }
 
 .cam-volume-val {

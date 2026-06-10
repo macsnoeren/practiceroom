@@ -4,6 +4,7 @@ import {
   CameraFrameInputSchema,
   DeviceStatusSchema,
   MicGainCommandSchema,
+  MicLevelInputSchema,
   MicSetGainSchema,
   SOCKET_EVENTS,
   type OnlineDevice,
@@ -204,6 +205,16 @@ export function setupRealtime(app: FastifyInstance): void {
       io.to(schoolRoom(data.schoolId)).emit(SOCKET_EVENTS.micGain, {
         deviceId: data.deviceId,
         gain: parsed.data.gain,
+      });
+    });
+
+    // A camera reports its live mic level -> the control room's meter.
+    socket.on(SOCKET_EVENTS.micLevel, (raw: unknown) => {
+      const parsed = MicLevelInputSchema.safeParse(raw);
+      if (!parsed.success) return;
+      io.to(schoolRoom(data.schoolId)).emit(SOCKET_EVENTS.micLevel, {
+        deviceId: data.deviceId,
+        level: parsed.data.level,
       });
     });
 

@@ -67,8 +67,8 @@ export function SiteAdminApp({
           </div>
           <SchoolsCard onEnter={onEnter} />
           <UsersCard meId={user.id} />
-          <SiteFooter />
         </div>
+        <SiteFooter />
       </main>
     </div>
   );

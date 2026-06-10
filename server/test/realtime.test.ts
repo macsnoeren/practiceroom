@@ -180,5 +180,15 @@ describe('realtime: presence and command routing', () => {
     const r = await report;
     assert.equal(r.deviceId, device.id);
     assert.equal(r.gain, 0.25);
+
+    // a live mic level is also relayed to staff (the sound test)
+    const levelPromise = waitEvent<{ deviceId: string; level: number }>(
+      staff,
+      SOCKET_EVENTS.micLevel,
+    );
+    cam.emit(SOCKET_EVENTS.micLevel, { level: 0.6 });
+    const lvl = await levelPromise;
+    assert.equal(lvl.deviceId, device.id);
+    assert.equal(lvl.level, 0.6);
   });
 });

@@ -18,7 +18,7 @@ import { MaterialView } from './MaterialView.js';
 export function LessonDashboard() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
-  const { online, statuses, frames, gains, setGain } = usePresence({ collectFrames: true });
+  const { online, statuses, frames, gains, levels, setGain } = usePresence({ collectFrames: true });
 
   const [detail, setDetail] = useState<LessonDetailDto | null>(null);
   const [devices, setDevices] = useState<DeviceDto[]>([]);
@@ -176,58 +176,75 @@ export function LessonDashboard() {
             Nog geen camera&rsquo;s aan deze les gekoppeld — kies ze hieronder.
           </p>
         ) : (
-          <div className="cam-grid">
-            {detail.devices.map((d) => {
-              const isOnline = online.has(d.id);
-              const isActive = activeId === d.id;
-              const frame = frames[d.id];
-              const clickable = !finished && (isOnline || isActive);
-              const gainPct = Math.round((gains[d.id] ?? 1) * 100);
-              return (
-                <div key={d.id} className="cam-cell">
-                  <button
-                    type="button"
-                    className={`cam-tile${isActive ? ' recording' : ''}${isOnline ? '' : ' offline'}`}
-                    disabled={!clickable}
-                    onClick={() => (isActive ? void stopActive() : void startOn(d.id))}
-                  >
-                    {frame ? (
-                      <img className="cam-tile-img" src={frame} alt={`Beeld van ${d.name}`} />
-                    ) : (
-                      <div className="cam-tile-img placeholder">
-                        {isOnline ? 'Wachten op beeld…' : 'Offline'}
-                      </div>
-                    )}
-                    <div className="cam-tile-bar">
-                      <span className="cam-tile-name">{d.name}</span>
-                      {isActive ? (
-                        <span className="tag rec">● REC</span>
-                      ) : isOnline ? (
-                        <span className="tag tag-ok">● online</span>
+          <>
+            <p className="muted">
+              <strong>Test:</strong> verschijnt er beeld in de tegel en beweegt de geluidsbalk
+              wanneer er geluid is, dan werken de camera en microfoon.
+            </p>
+            <div className="cam-grid">
+              {detail.devices.map((d) => {
+                const isOnline = online.has(d.id);
+                const isActive = activeId === d.id;
+                const frame = frames[d.id];
+                const clickable = !finished && (isOnline || isActive);
+                const gainPct = Math.round((gains[d.id] ?? 1) * 100);
+                return (
+                  <div key={d.id} className="cam-cell">
+                    <button
+                      type="button"
+                      className={`cam-tile${isActive ? ' recording' : ''}${isOnline ? '' : ' offline'}`}
+                      disabled={!clickable}
+                      onClick={() => (isActive ? void stopActive() : void startOn(d.id))}
+                    >
+                      {frame ? (
+                        <img className="cam-tile-img" src={frame} alt={`Beeld van ${d.name}`} />
                       ) : (
-                        <span className="tag">offline</span>
+                        <div className="cam-tile-img placeholder">
+                          {isOnline ? 'Wachten op beeld…' : 'Offline'}
+                        </div>
                       )}
-                    </div>
-                  </button>
-                  {isOnline && (
-                    <div className="cam-volume" title="Microfoonvolume">
-                      <span aria-hidden>🎙️</span>
-                      <input
-                        type="range"
-                        min={0}
-                        max={200}
-                        step={5}
-                        value={gainPct}
-                        aria-label={`Microfoonvolume ${d.name}`}
-                        onChange={(e) => setGain(d.id, Number(e.target.value) / 100)}
-                      />
-                      <span className="cam-volume-val">{gainPct}%</span>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                      <div className="cam-tile-bar">
+                        <span className="cam-tile-name">{d.name}</span>
+                        {isActive ? (
+                          <span className="tag rec">● REC</span>
+                        ) : isOnline ? (
+                          <span className="tag tag-ok">● online</span>
+                        ) : (
+                          <span className="tag">offline</span>
+                        )}
+                      </div>
+                    </button>
+                    {isOnline && (
+                      <>
+                        <div className="cam-level" title="Geluidsniveau (test)" aria-hidden>
+                          <span>🔊</span>
+                          <div className="level-track">
+                            <div
+                              className="level-fill"
+                              style={{ width: `${Math.round((levels[d.id] ?? 0) * 100)}%` }}
+                            />
+                          </div>
+                        </div>
+                        <div className="cam-volume" title="Microfoonvolume">
+                          <span aria-hidden>🎙️</span>
+                          <input
+                            type="range"
+                            min={0}
+                            max={200}
+                            step={5}
+                            value={gainPct}
+                            aria-label={`Microfoonvolume ${d.name}`}
+                            onChange={(e) => setGain(d.id, Number(e.target.value) / 100)}
+                          />
+                          <span className="cam-volume-val">{gainPct}%</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
         )}
 
         {!finished && (

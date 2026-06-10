@@ -71,5 +71,10 @@ export function useDeviceSocket() {
     socketRef.current?.emit(SOCKET_EVENTS.micGain, { gain });
   }, []);
 
-  return { connected, activeRecording, sendFrame, gainCommand, reportGain };
+  /** Report the camera's live mic level for the control room's meter. */
+  const reportLevel = useCallback((level: number) => {
+    socketRef.current?.emit(SOCKET_EVENTS.micLevel, { level });
+  }, []);
+
+  return { connected, activeRecording, sendFrame, gainCommand, reportGain, reportLevel };
 }
