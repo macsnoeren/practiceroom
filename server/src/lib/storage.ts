@@ -127,11 +127,6 @@ export function normalizedBrandingPath(lessonId: string, slot: BrandingSlot): st
   return join(root, 'composites', `${lessonId}.norm.${slot}.mp4`);
 }
 
-/** Temp file holding the overlay text passed to ffmpeg's drawtext. */
-export function overlayTextPath(lessonId: string): string {
-  return join(root, 'composites', `${lessonId}.overlay.txt`);
-}
-
 export async function compositeSize(lessonId: string): Promise<number> {
   try {
     return (await stat(compositePath(lessonId))).size;

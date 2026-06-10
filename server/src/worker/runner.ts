@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { access, writeFile } from 'node:fs/promises';
+import { access } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import { prisma } from '../db.js';
@@ -20,7 +20,6 @@ import {
   ensureCompositeDir,
   normalizedBrandingPath,
   normalizedSegmentPath,
-  overlayTextPath,
   recordingPath,
   removeFile,
   type BrandingSlot,
@@ -184,13 +183,10 @@ export async function processQueuedJob(): Promise<JobResult> {
       if (outro) inputs.push(outro);
 
       // Optional "do not distribute" watermark (only when a font is configured).
-      let overlay: { textFile: string; fontPath: string } | undefined;
+      let overlay: { text: string; fontPath: string } | undefined;
       const overlayText = school?.overlayText?.trim();
       if (overlayText && env.FONT_PATH) {
-        const textFile = overlayTextPath(job.lessonId);
-        await writeFile(textFile, overlayText, 'utf8');
-        temps.push(textFile);
-        overlay = { textFile, fontPath: env.FONT_PATH };
+        overlay = { text: overlayText, fontPath: env.FONT_PATH };
       }
 
       try {

@@ -69,6 +69,19 @@ function escapeFilterPath(path: string): string {
   return path.replace(/\\/g, '/').replace(/:/g, '\\:');
 }
 
+/**
+ * Escapes watermark text for drawtext's single-quoted `text='…'` value. Inside
+ * the quotes a colon/percent is literal (we also pass expansion=none), so only
+ * backslashes, the quote itself and newlines need handling. A literal quote is
+ * written as '\'' (close, escaped quote, reopen).
+ */
+function escapeDrawText(text: string): string {
+  return text
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "'\\''")
+    .replace(/[\r\n]+/g, ' ');
+}
+
 const SCALE_PAD =
   `scale=${COMPOSITE_WIDTH}:${COMPOSITE_HEIGHT}:force_original_aspect_ratio=decrease,` +
   `pad=${COMPOSITE_WIDTH}:${COMPOSITE_HEIGHT}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${COMPOSITE_FPS}`;
@@ -140,7 +153,7 @@ export function buildCanonicalExternalArgs(
 
 interface ConcatOptions {
   /** Burn a watermark text onto every frame (needs a font file). */
-  overlay?: { textFile: string; fontPath: string };
+  overlay?: { text: string; fontPath: string };
 }
 
 export function buildConcatArgs(
@@ -153,10 +166,11 @@ export function buildConcatArgs(
   const args: string[] = [];
   for (const input of inputs) args.push('-i', input);
 
-  // Optional "do not distribute" watermark, centred near the bottom.
+  // Optional "do not distribute" watermark, centred near the bottom. The text is
+  // inlined (not a textfile) because some ffmpeg builds reject `textfile`.
   const drawtext = opts.overlay
     ? `,drawtext=fontfile=${escapeFilterPath(opts.overlay.fontPath)}:` +
-      `textfile=${escapeFilterPath(opts.overlay.textFile)}:` +
+      `text='${escapeDrawText(opts.overlay.text)}':expansion=none:` +
       `x=(w-text_w)/2:y=h-(2*line_h):fontsize=24:fontcolor=white@0.9:` +
       `box=1:boxcolor=black@0.45:boxborderw=10`
     : '';

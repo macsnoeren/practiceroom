@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { copyFile, mkdir, stat } from 'node:fs/promises';
+import { access, copyFile, mkdir, stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { promisify } from 'node:util';
+import { randomUUID } from 'node:crypto';
 import { after, before, describe, it } from 'node:test';
 import type { FastifyInstance } from 'fastify';
 import ffmpeg from '@ffmpeg-installer/ffmpeg';
@@ -12,7 +13,7 @@ import {
   buildConcatArgs,
   buildSilentAudioArgs,
 } from '../src/lib/composite.js';
-import { processQueuedJob } from '../src/worker/runner.js';
+import { processQueuedJob, runFfmpeg } from '../src/worker/runner.js';
 import { prisma } from '../src/db.js';
 import { brandingPath, compositePath, recordingPath } from '../src/lib/storage.js';
 import { createUser, login, registerSchool, setupTestApp } from './helpers.js';
@@ -139,10 +140,10 @@ describe('worker: composite video', () => {
 
   it('builds a watermark filter and canonicalises external clips (pure)', () => {
     const withOverlay = buildConcatArgs(['a.webm'], 'out.mp4', {
-      overlay: { textFile: '/tmp/o.txt', fontPath: '/font.ttf' },
+      overlay: { text: 'Niet verspreiden', fontPath: '/font.ttf' },
     });
     assert.ok(withOverlay.join(' ').includes('drawtext='));
-    assert.ok(withOverlay.join(' ').includes('textfile=/tmp/o.txt'));
+    assert.ok(withOverlay.join(' ').includes("text='Niet verspreiden'"));
 
     const both = buildCanonicalExternalArgs('intro.mp4', 'out.mp4', true, true);
     assert.ok(both.includes('-vf'));
@@ -150,6 +151,40 @@ describe('worker: composite video', () => {
     assert.ok(noAudio.join(' ').includes('anullsrc'));
     const noVideo = buildCanonicalExternalArgs('audio.m4a', 'out.mp4', false, true);
     assert.ok(noVideo.join(' ').includes('color=c=black'));
+  });
+
+  it('burns in the watermark text when a system font is available', async (t) => {
+    const fonts = [
+      'C:/Windows/Fonts/arial.ttf',
+      '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+      '/Library/Fonts/Arial.ttf',
+    ];
+    let fontPath: string | null = null;
+    for (const f of fonts) {
+      try {
+        await access(f);
+        fontPath = f;
+        break;
+      } catch {
+        // try the next candidate
+      }
+    }
+    if (!fontPath) {
+      t.skip('no system font available for drawtext');
+      return;
+    }
+
+    const input = recordingPath(randomUUID());
+    const output = compositePath(randomUUID());
+    await genWebm(input, '320x240', 440);
+    await mkdir(dirname(output), { recursive: true });
+    // Must not throw: drawtext with a real font + inline text.
+    await runFfmpeg(
+      buildConcatArgs([input], output, {
+        overlay: { text: "Niet verspreiden — eigendom van 't huis", fontPath },
+      }),
+    );
+    assert.ok((await stat(output)).size > 0);
   });
 
   it('prepends an intro and appends an outro to the lesson video', async () => {
