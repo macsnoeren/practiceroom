@@ -574,7 +574,26 @@ export const SOCKET_EVENTS = {
   deviceStatus: 'device:status',
   /** device -> server -> staff: a low-res preview snapshot from a camera. */
   cameraFrame: 'camera:frame',
+  /** staff -> server -> device: set a camera's microphone gain. */
+  micSetGain: 'mic:set-gain',
+  /** device -> server -> staff: report a camera's current microphone gain. */
+  micGain: 'mic:gain',
 } as const;
+
+/** A microphone gain multiplier: 0 = muted, 1 = unchanged, up to 2 = +100%. */
+const gainField = z.number().min(0).max(2);
+
+/** staff -> server: set the gain of a specific camera's microphone. */
+export const MicSetGainSchema = z.object({ deviceId: z.string(), gain: gainField });
+export type MicSetGainInput = z.infer<typeof MicSetGainSchema>;
+
+/** server -> device: the gain to apply (the device already knows it is itself). */
+export const MicGainCommandSchema = z.object({ gain: gainField });
+export type MicGainCommand = z.infer<typeof MicGainCommandSchema>;
+
+/** server -> staff: a camera reported its current microphone gain. */
+export const MicGainSchema = z.object({ deviceId: z.string(), gain: gainField });
+export type MicGain = z.infer<typeof MicGainSchema>;
 
 /** device -> server: a single preview snapshot (a small JPEG data URL). */
 export const CameraFrameInputSchema = z.object({

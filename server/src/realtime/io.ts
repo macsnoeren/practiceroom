@@ -3,6 +3,8 @@ import { Server, type Socket } from 'socket.io';
 import {
   CameraFrameInputSchema,
   DeviceStatusSchema,
+  MicGainCommandSchema,
+  MicSetGainSchema,
   SOCKET_EVENTS,
   type OnlineDevice,
   type Role,
@@ -140,6 +142,22 @@ export function setupRealtime(app: FastifyInstance): void {
     } else {
       // Staff: send the current presence list once.
       socket.emit(SOCKET_EVENTS.presenceSnapshot, { devices: snapshot(data.schoolId) });
+
+      // Staff sets a camera's mic gain -> relay to that device (same school only).
+      socket.on(SOCKET_EVENTS.micSetGain, (raw: unknown) => {
+        const parsed = MicSetGainSchema.safeParse(raw);
+        if (!parsed.success) return;
+        if (!onlineDeviceIds.has(parsed.data.deviceId)) return;
+        prisma.device
+          .findUnique({ where: { id: parsed.data.deviceId }, select: { schoolId: true } })
+          .then((device) => {
+            if (device?.schoolId !== data.schoolId) return;
+            io.to(deviceRoom(parsed.data.deviceId)).emit(SOCKET_EVENTS.micSetGain, {
+              gain: parsed.data.gain,
+            });
+          })
+          .catch(() => undefined);
+      });
     }
   });
 
@@ -176,6 +194,16 @@ export function setupRealtime(app: FastifyInstance): void {
       io.to(schoolRoom(data.schoolId)).emit(SOCKET_EVENTS.cameraFrame, {
         deviceId: data.deviceId,
         dataUrl: parsed.data.dataUrl,
+      });
+    });
+
+    // A camera reports its current mic gain -> tell the school's staff.
+    socket.on(SOCKET_EVENTS.micGain, (raw: unknown) => {
+      const parsed = MicGainCommandSchema.safeParse(raw);
+      if (!parsed.success) return;
+      io.to(schoolRoom(data.schoolId)).emit(SOCKET_EVENTS.micGain, {
+        deviceId: data.deviceId,
+        gain: parsed.data.gain,
       });
     });
 

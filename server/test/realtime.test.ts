@@ -158,4 +158,27 @@ describe('realtime: presence and command routing', () => {
     assert.equal(frame.deviceId, device.id);
     assert.equal(frame.dataUrl, 'data:image/jpeg;base64,AAAA');
   });
+
+  it('relays a mic gain command to the camera and the camera report back to staff', async () => {
+    const a = await registerSchool(app, 'RT Gain', 'rt-gain@example.com');
+    const device = await createPairedDevice(a.cookie, 'Cam Gain');
+
+    const staff = connectStaff(a.cookie);
+    await waitConnect(staff);
+    const cam = connectDevice(device.token);
+    await waitConnect(cam);
+    await delay(50); // let the device be marked online
+
+    // staff -> device
+    const command = waitEvent<{ gain: number }>(cam, SOCKET_EVENTS.micSetGain);
+    staff.emit(SOCKET_EVENTS.micSetGain, { deviceId: device.id, gain: 1.5 });
+    assert.equal((await command).gain, 1.5);
+
+    // device -> staff
+    const report = waitEvent<{ deviceId: string; gain: number }>(staff, SOCKET_EVENTS.micGain);
+    cam.emit(SOCKET_EVENTS.micGain, { gain: 0.25 });
+    const r = await report;
+    assert.equal(r.deviceId, device.id);
+    assert.equal(r.gain, 0.25);
+  });
 });

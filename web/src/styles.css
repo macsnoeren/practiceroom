@@ -1062,6 +1062,32 @@ th {
   margin: 0.75rem 0 1rem;
 }
 
+.cam-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.cam-volume {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.cam-volume input[type='range'] {
+  flex: 1;
+  margin: 0;
+  accent-color: var(--primary);
+}
+
+.cam-volume-val {
+  font-variant-numeric: tabular-nums;
+  min-width: 3ch;
+  text-align: right;
+}
+
 .cam-tile {
   position: relative;
   margin: 0;

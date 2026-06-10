@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
-import { io } from 'socket.io-client';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { io, type Socket } from 'socket.io-client';
 import {
   CameraFrameSchema,
   DeviceOfflineSchema,
   DeviceStatusUpdateSchema,
+  MicGainSchema,
   OnlineDeviceSchema,
   PresenceSnapshotSchema,
   SOCKET_EVENTS,
@@ -20,9 +21,12 @@ export function usePresence({ collectFrames = false }: { collectFrames?: boolean
   const [online, setOnline] = useState<Set<string>>(new Set());
   const [statuses, setStatuses] = useState<Record<string, DeviceState>>({});
   const [frames, setFrames] = useState<Record<string, string>>({});
+  const [gains, setGains] = useState<Record<string, number>>({});
+  const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
     const socket = io({ withCredentials: true });
+    socketRef.current = socket;
 
     socket.on(SOCKET_EVENTS.presenceSnapshot, (raw: unknown) => {
       const parsed = PresenceSnapshotSchema.safeParse(raw);
@@ -60,12 +64,24 @@ export function usePresence({ collectFrames = false }: { collectFrames?: boolean
           setFrames((prev) => ({ ...prev, [parsed.data.deviceId]: parsed.data.dataUrl }));
         }
       });
+      socket.on(SOCKET_EVENTS.micGain, (raw: unknown) => {
+        const parsed = MicGainSchema.safeParse(raw);
+        if (parsed.success) {
+          setGains((prev) => ({ ...prev, [parsed.data.deviceId]: parsed.data.gain }));
+        }
+      });
     }
 
     return () => {
+      socketRef.current = null;
       socket.close();
     };
   }, [collectFrames]);
 
-  return { online, statuses, frames };
+  /** Set a camera's microphone gain (a 0–2 multiplier). */
+  const setGain = useCallback((deviceId: string, gain: number) => {
+    socketRef.current?.emit(SOCKET_EVENTS.micSetGain, { deviceId, gain });
+  }, []);
+
+  return { online, statuses, frames, gains, setGain };
 }

@@ -4,6 +4,7 @@ import { ApiError, cameraApi, clearToken, getToken, setToken } from './api.js';
 import { CameraPreview } from './components/CameraPreview.js';
 import { useDeviceSocket } from './useDeviceSocket.js';
 import { useFramePublisher } from './useFramePublisher.js';
+import { useMicGain } from './useMicGain.js';
 import { useRecorder } from './useRecorder.js';
 
 type State =
@@ -55,10 +56,17 @@ function PairedView({
   device: { id: string; name: string };
   onUnpair: () => void;
 }) {
-  const { connected, activeRecording, sendFrame } = useDeviceSocket();
-  const [stream, setStream] = useState<MediaStream | null>(null);
+  const { connected, activeRecording, sendFrame, gainCommand, reportGain } = useDeviceSocket();
+  const [rawStream, setRawStream] = useState<MediaStream | null>(null);
+  const gain = gainCommand ?? 1;
+  const stream = useMicGain(rawStream, gain);
   const recorderState = useRecorder(stream, activeRecording);
   useFramePublisher(stream, sendFrame, connected);
+
+  // Tell the control room which gain this camera is currently applying.
+  useEffect(() => {
+    if (connected) reportGain(gain);
+  }, [connected, gain, reportGain]);
 
   const isRecording = recorderState === 'recording';
 
@@ -83,7 +91,7 @@ function PairedView({
       )}
 
       <div className="card">
-        <CameraPreview onStream={setStream} disabled={isRecording} />
+        <CameraPreview onStream={setRawStream} disabled={isRecording} />
       </div>
     </>
   );

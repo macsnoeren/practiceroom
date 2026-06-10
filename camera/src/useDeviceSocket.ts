@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import {
+  MicGainCommandSchema,
   SOCKET_EVENTS,
   StartRecordingMsgSchema,
   StopRecordingMsgSchema,
@@ -21,6 +22,7 @@ export interface ActiveRecording {
 export function useDeviceSocket() {
   const [connected, setConnected] = useState(false);
   const [activeRecording, setActiveRecording] = useState<ActiveRecording | null>(null);
+  const [gainCommand, setGainCommand] = useState<number | null>(null);
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
@@ -49,6 +51,11 @@ export function useDeviceSocket() {
       socket.emit(SOCKET_EVENTS.statusUpdate, { state: 'idle' });
     });
 
+    socket.on(SOCKET_EVENTS.micSetGain, (raw: unknown) => {
+      const parsed = MicGainCommandSchema.safeParse(raw);
+      if (parsed.success) setGainCommand(parsed.data.gain);
+    });
+
     return () => {
       socketRef.current = null;
       socket.close();
@@ -59,5 +66,10 @@ export function useDeviceSocket() {
     socketRef.current?.emit(SOCKET_EVENTS.cameraFrame, { dataUrl });
   }, []);
 
-  return { connected, activeRecording, sendFrame };
+  /** Report the camera's current mic gain back to the control room. */
+  const reportGain = useCallback((gain: number) => {
+    socketRef.current?.emit(SOCKET_EVENTS.micGain, { gain });
+  }, []);
+
+  return { connected, activeRecording, sendFrame, gainCommand, reportGain };
 }
