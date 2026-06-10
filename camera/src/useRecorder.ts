@@ -4,9 +4,16 @@ import { ChunkUploader } from './upload.js';
 
 export type RecorderState = 'idle' | 'recording' | 'finishing' | 'error';
 
-const VIDEO_MIME_TYPES = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+// webm first (desktop Chrome/Firefox), then mp4 as a fallback for Safari/iOS,
+// which does not support webm — there the recorder produces mp4 (H.264/AAC).
+const VIDEO_MIME_TYPES = [
+  'video/webm;codecs=vp9,opus',
+  'video/webm;codecs=vp8,opus',
+  'video/webm',
+  'video/mp4',
+];
 
-const AUDIO_MIME_TYPES = ['audio/webm;codecs=opus', 'audio/webm'];
+const AUDIO_MIME_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/aac'];
 
 function pickMimeType(hasVideo: boolean): string | undefined {
   if (typeof MediaRecorder === 'undefined') return undefined;
@@ -60,10 +67,13 @@ export function useRecorder(
     recorder.onstop = () => {
       setState('finishing');
       const fallback = hasVideo ? 'video/webm' : 'audio/webm';
+      // Report the type the recorder actually produced (Safari/iOS picks mp4),
+      // so the stored file is labelled correctly for playback.
+      const actualType = recorder.mimeType || mimeType || fallback;
       // A crop only applies to a captured video frame.
       const crop = hasVideo ? cropRef.current : null;
       void uploader
-        .finish(mimeType ?? fallback, { hasVideo, hasAudio, crop })
+        .finish(actualType, { hasVideo, hasAudio, crop })
         .then(() => setState('idle'));
     };
 

@@ -3,6 +3,13 @@ import { getToken } from './api.js';
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Upload in pieces no larger than this. The server appends raw bytes in order,
+// so splitting a blob and reassembling it yields an identical file. This keeps
+// every request well under the server's body limit — important on Safari/iOS,
+// which tends to emit the whole recording as one large blob at stop instead of
+// honouring the timeslice.
+const MAX_PART_BYTES = 4 * 1024 * 1024;
+
 /**
  * Uploads recording chunks to the server strictly in order. Chunks stay in the
  * queue until the server confirms them, so a brief network drop just means the
@@ -17,7 +24,10 @@ export class ChunkUploader {
   constructor(private readonly recordingId: string) {}
 
   enqueue(chunk: Blob): void {
-    this.queue.push(chunk);
+    // Split large blobs into byte-range slices so no single request is too big.
+    for (let start = 0; start < chunk.size; start += MAX_PART_BYTES) {
+      this.queue.push(chunk.slice(start, Math.min(start + MAX_PART_BYTES, chunk.size)));
+    }
     void this.pump();
   }
 
