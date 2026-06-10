@@ -443,6 +443,119 @@ a {
   max-width: 400px;
 }
 
+/* ------------------------------------------------------------- landing page */
+
+.landing {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 1.5rem;
+}
+
+.landing > .site-footer {
+  margin-top: auto;
+  width: 100%;
+  max-width: 1040px;
+}
+
+.landing-hero {
+  text-align: center;
+  max-width: 760px;
+  padding: clamp(3rem, 8vw, 6rem) 0 2.5rem;
+}
+
+.landing-logo {
+  height: 64px;
+  width: auto;
+  margin-bottom: 1.5rem;
+}
+
+.landing-hero h1 {
+  font-size: clamp(1.9rem, 4.5vw, 3rem);
+  line-height: 1.1;
+  margin: 0 0 1rem;
+}
+
+.landing-lead {
+  font-size: 1.15rem;
+  color: var(--muted);
+  line-height: 1.6;
+  margin: 0 auto 2rem;
+  max-width: 620px;
+}
+
+.hero-cta {
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.hero-cta button {
+  font-size: 1.05rem;
+  padding: 0.8rem 1.6rem;
+}
+
+.landing-section {
+  width: 100%;
+  max-width: 1040px;
+  padding: 2.5rem 0;
+}
+
+.landing-section > h2 {
+  text-align: center;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  margin: 0 0 2rem;
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1.25rem;
+}
+
+.feature {
+  text-align: left;
+}
+
+.feature-icon {
+  font-size: 1.9rem;
+  line-height: 1;
+  margin-bottom: 0.65rem;
+}
+
+.feature h3 {
+  margin: 0 0 0.4rem;
+  font-size: 1.1rem;
+}
+
+.feature p {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.landing-why {
+  border-top: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+}
+
+.reason-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.5rem 2rem;
+  margin-bottom: 2.5rem;
+}
+
+.reason h3 {
+  margin: 0 0 0.4rem;
+  font-size: 1.05rem;
+  color: var(--primary);
+}
+
+.reason p {
+  margin: 0;
+  line-height: 1.55;
+}
+
 .form-footer {
   margin: 0.85rem 0 0;
   text-align: center;

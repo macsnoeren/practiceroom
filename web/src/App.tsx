@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
 import { BrowserRouter } from 'react-router-dom';
-import { APP_NAME, type UserDto } from '@practiceroom/shared';
+import type { UserDto } from '@practiceroom/shared';
 import { ApiError, api } from './api.js';
-import { AuthScreen } from './components/AuthScreen.js';
 import { AppShell } from './components/AppShell.js';
-import { SiteFooter } from './components/SiteFooter.js';
+import { PublicSite } from './components/PublicSite.js';
 import { SiteSetup } from './components/SiteSetup.js';
 import { SiteAdminApp } from './components/SiteAdminApp.js';
 
@@ -48,17 +47,7 @@ export function App() {
 
   if (auth.kind === 'anon') {
     if (auth.needsSetup) return <SiteSetup onAuthenticated={setAuthed} />;
-    return (
-      <div className="auth-page">
-        <div className="auth-card">
-          <div className="auth-brand">
-            <img className="brand-logo" src="/practice-room-logo.png" alt={APP_NAME} />
-          </div>
-          <AuthScreen onAuthenticated={setAuthed} />
-        </div>
-        <SiteFooter />
-      </div>
-    );
+    return <PublicSite onAuthenticated={setAuthed} />;
   }
 
   const { user } = auth;
