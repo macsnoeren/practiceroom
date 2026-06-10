@@ -17,6 +17,14 @@ model School {
   name      String
   createdAt DateTime @default(now())
 
+  // Branding applied to every combined lesson video: an optional intro and
+  // outro clip (stored on disk), and an overlay/watermark text.
+  overlayText    String?
+  introMimeType  String?
+  introSizeBytes Int     @default(0)
+  outroMimeType  String?
+  outroSizeBytes Int     @default(0)
+
   users    User[]
   devices  Device[]
   lessons  Lesson[]

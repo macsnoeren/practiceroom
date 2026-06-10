@@ -1,8 +1,55 @@
-import { appendFile, copyFile, mkdir, rm, stat } from 'node:fs/promises';
+import { access, appendFile, copyFile, mkdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { env } from '../env.js';
 
 const root = resolve(env.STORAGE_DIR);
+
+export type BrandingSlot = 'intro' | 'outro';
+
+/** Final path of a school's intro/outro clip used by the composite worker. */
+export function brandingPath(schoolId: string, slot: BrandingSlot): string {
+  return join(root, 'branding', schoolId, slot);
+}
+
+function brandingTempPath(schoolId: string, slot: BrandingSlot): string {
+  return `${brandingPath(schoolId, slot)}.part`;
+}
+
+/** Append a chunk to the in-progress upload (a temp file alongside the final).
+ * Index 0 starts fresh, so a re-started upload overwrites any leftover. */
+export async function appendBrandingChunk(
+  schoolId: string,
+  slot: BrandingSlot,
+  data: Buffer,
+  index: number,
+): Promise<void> {
+  const path = brandingTempPath(schoolId, slot);
+  await mkdir(dirname(path), { recursive: true });
+  if (index === 0) await writeFile(path, data);
+  else await appendFile(path, data);
+}
+
+/** Promote the finished upload to the final path so the worker never sees a
+ * half-written clip. Returns the final size. */
+export async function finalizeBranding(schoolId: string, slot: BrandingSlot): Promise<number> {
+  const final = brandingPath(schoolId, slot);
+  await rename(brandingTempPath(schoolId, slot), final);
+  return (await stat(final)).size;
+}
+
+export async function brandingExists(schoolId: string, slot: BrandingSlot): Promise<boolean> {
+  try {
+    await access(brandingPath(schoolId, slot));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function removeBranding(schoolId: string, slot: BrandingSlot): Promise<void> {
+  await rm(brandingPath(schoolId, slot), { force: true });
+  await rm(brandingTempPath(schoolId, slot), { force: true });
+}
 
 /** Absolute path of a library item's video file (no extension; mime is stored). */
 export function libraryPath(itemId: string): string {
@@ -73,6 +120,16 @@ export function normalizedSegmentPath(lessonId: string, recordingId: string): st
 /** Best-effort removal of a file (used to clean up temporary segments). */
 export async function removeFile(path: string): Promise<void> {
   await rm(path, { force: true }).catch(() => undefined);
+}
+
+/** Temp path for a canonicalised intro/outro clip while a composite is built. */
+export function normalizedBrandingPath(lessonId: string, slot: BrandingSlot): string {
+  return join(root, 'composites', `${lessonId}.norm.${slot}.mp4`);
+}
+
+/** Temp file holding the overlay text passed to ffmpeg's drawtext. */
+export function overlayTextPath(lessonId: string): string {
+  return join(root, 'composites', `${lessonId}.overlay.txt`);
 }
 
 export async function compositeSize(lessonId: string): Promise<number> {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdir, stat } from 'node:fs/promises';
+import { copyFile, mkdir, stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { promisify } from 'node:util';
 import { after, before, describe, it } from 'node:test';
@@ -8,12 +8,13 @@ import type { FastifyInstance } from 'fastify';
 import ffmpeg from '@ffmpeg-installer/ffmpeg';
 import {
   buildBlackVideoArgs,
+  buildCanonicalExternalArgs,
   buildConcatArgs,
   buildSilentAudioArgs,
 } from '../src/lib/composite.js';
 import { processQueuedJob } from '../src/worker/runner.js';
 import { prisma } from '../src/db.js';
-import { compositePath, recordingPath } from '../src/lib/storage.js';
+import { brandingPath, compositePath, recordingPath } from '../src/lib/storage.js';
 import { createUser, login, registerSchool, setupTestApp } from './helpers.js';
 
 const execFileP = promisify(execFile);
@@ -134,6 +135,46 @@ describe('worker: composite video', () => {
     const silent = buildSilentAudioArgs('video.webm', 'fixed.webm');
     assert.ok(silent.join(' ').includes('anullsrc'));
     assert.ok(silent.includes('-shortest'));
+  });
+
+  it('builds a watermark filter and canonicalises external clips (pure)', () => {
+    const withOverlay = buildConcatArgs(['a.webm'], 'out.mp4', {
+      overlay: { textFile: '/tmp/o.txt', fontPath: '/font.ttf' },
+    });
+    assert.ok(withOverlay.join(' ').includes('drawtext='));
+    assert.ok(withOverlay.join(' ').includes('textfile=/tmp/o.txt'));
+
+    const both = buildCanonicalExternalArgs('intro.mp4', 'out.mp4', true, true);
+    assert.ok(both.includes('-vf'));
+    const noAudio = buildCanonicalExternalArgs('intro.mp4', 'out.mp4', true, false);
+    assert.ok(noAudio.join(' ').includes('anullsrc'));
+    const noVideo = buildCanonicalExternalArgs('audio.m4a', 'out.mp4', false, true);
+    assert.ok(noVideo.join(' ').includes('color=c=black'));
+  });
+
+  it('prepends an intro and appends an outro to the lesson video', async () => {
+    const s = await setup('branding');
+    const schoolId = (await prisma.lesson.findUniqueOrThrow({ where: { id: s.lessonId } }))
+      .schoolId;
+
+    const rec = await prisma.recording.create({
+      data: { lessonId: s.lessonId, deviceId: s.deviceId, status: 'completed' },
+    });
+    await genWebm(recordingPath(rec.id), '320x240', 440);
+    // Branding files are stored extensionless (raw uploaded bytes), so generate
+    // a .webm first and copy it into place.
+    await genWebm(`${brandingPath(schoolId, 'intro')}.webm`, '640x480', 330);
+    await copyFile(`${brandingPath(schoolId, 'intro')}.webm`, brandingPath(schoolId, 'intro'));
+    await genWebm(`${brandingPath(schoolId, 'outro')}.webm`, '640x480', 550);
+    await copyFile(`${brandingPath(schoolId, 'outro')}.webm`, brandingPath(schoolId, 'outro'));
+    await prisma.school.update({
+      where: { id: schoolId },
+      data: { introMimeType: 'video/webm', outroMimeType: 'video/webm' },
+    });
+    await prisma.compositeVideo.create({ data: { lessonId: s.lessonId, status: 'queued' } });
+
+    assert.equal(await processQueuedJob(), 'done');
+    assert.ok((await stat(compositePath(s.lessonId))).size > 0);
   });
 
   it('composites a mix of camera, audio-only and silent-camera segments', async () => {

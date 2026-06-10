@@ -13,6 +13,7 @@ import { userRoutes } from './routes/users.js';
 import { deviceRoutes } from './routes/devices.js';
 import { lessonRoutes } from './routes/lessons.js';
 import { libraryRoutes } from './routes/library.js';
+import { settingsRoutes } from './routes/settings.js';
 import { holidayRoutes } from './routes/holidays.js';
 import { roomRoutes } from './routes/rooms.js';
 import { recordingRoutes } from './routes/recordings.js';
@@ -77,6 +78,7 @@ export async function buildApp() {
   await app.register(deviceRoutes);
   await app.register(lessonRoutes);
   await app.register(libraryRoutes);
+  await app.register(settingsRoutes);
   await app.register(holidayRoutes);
   await app.register(roomRoutes);
   await app.register(recordingRoutes);

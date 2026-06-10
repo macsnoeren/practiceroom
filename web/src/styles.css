@@ -668,6 +668,16 @@ th {
   gap: 0.5rem;
 }
 
+.branding-row {
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.branding-row .row {
+  gap: 0.75rem;
+  align-items: center;
+}
+
 .lesson-actions {
   margin-top: 1.25rem;
   border-top: 1px solid var(--border);

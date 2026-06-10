@@ -64,18 +64,109 @@ export function buildBlackVideoArgs(input: string, output: string): string[] {
   ];
 }
 
-export function buildConcatArgs(inputs: string[], output: string): string[] {
+/** Escapes a filesystem path for use inside an ffmpeg filter argument. */
+function escapeFilterPath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/:/g, '\\:');
+}
+
+const SCALE_PAD =
+  `scale=${COMPOSITE_WIDTH}:${COMPOSITE_HEIGHT}:force_original_aspect_ratio=decrease,` +
+  `pad=${COMPOSITE_WIDTH}:${COMPOSITE_HEIGHT}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${COMPOSITE_FPS}`;
+
+/**
+ * Re-encodes an arbitrary intro/outro clip into a canonical h264/aac mp4 with a
+ * guaranteed video and audio stream (synthesising a black frame or silence when
+ * absent), so it concatenates cleanly with the lesson segments.
+ */
+export function buildCanonicalExternalArgs(
+  input: string,
+  output: string,
+  hasVideo: boolean,
+  hasAudio: boolean,
+): string[] {
+  const encode = [
+    '-c:v',
+    'libx264',
+    '-preset',
+    'veryfast',
+    '-pix_fmt',
+    'yuv420p',
+    '-c:a',
+    'aac',
+    '-ar',
+    '48000',
+    '-movflags',
+    '+faststart',
+    '-shortest',
+    '-y',
+    output,
+  ];
+
+  if (hasVideo && hasAudio) {
+    return ['-i', input, '-vf', SCALE_PAD, ...encode];
+  }
+  if (hasVideo && !hasAudio) {
+    return [
+      '-i',
+      input,
+      '-f',
+      'lavfi',
+      '-i',
+      'anullsrc=channel_layout=stereo:sample_rate=48000',
+      '-filter_complex',
+      `[0:v]${SCALE_PAD}[v]`,
+      '-map',
+      '[v]',
+      '-map',
+      '1:a',
+      ...encode,
+    ];
+  }
+  // audio only: a black frame for the audio's duration
+  return [
+    '-f',
+    'lavfi',
+    '-i',
+    `color=c=black:s=${COMPOSITE_WIDTH}x${COMPOSITE_HEIGHT}:r=${COMPOSITE_FPS}`,
+    '-i',
+    input,
+    '-map',
+    '0:v',
+    '-map',
+    '1:a',
+    ...encode,
+  ];
+}
+
+interface ConcatOptions {
+  /** Burn a watermark text onto every frame (needs a font file). */
+  overlay?: { textFile: string; fontPath: string };
+}
+
+export function buildConcatArgs(
+  inputs: string[],
+  output: string,
+  opts: ConcatOptions = {},
+): string[] {
   if (inputs.length === 0) throw new Error('Geen invoer om samen te voegen');
 
   const args: string[] = [];
   for (const input of inputs) args.push('-i', input);
+
+  // Optional "do not distribute" watermark, centred near the bottom.
+  const drawtext = opts.overlay
+    ? `,drawtext=fontfile=${escapeFilterPath(opts.overlay.fontPath)}:` +
+      `textfile=${escapeFilterPath(opts.overlay.textFile)}:` +
+      `x=(w-text_w)/2:y=h-(2*line_h):fontsize=24:fontcolor=white@0.9:` +
+      `box=1:boxcolor=black@0.45:boxborderw=10`
+    : '';
 
   const filters: string[] = [];
   const concatInputs: string[] = [];
   inputs.forEach((_, i) => {
     filters.push(
       `[${i}:v]scale=${COMPOSITE_WIDTH}:${COMPOSITE_HEIGHT}:force_original_aspect_ratio=decrease,` +
-        `pad=${COMPOSITE_WIDTH}:${COMPOSITE_HEIGHT}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${COMPOSITE_FPS}[v${i}]`,
+        `pad=${COMPOSITE_WIDTH}:${COMPOSITE_HEIGHT}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${COMPOSITE_FPS}${drawtext}[v${i}]`,
     );
     filters.push(`[${i}:a]aresample=async=1[a${i}]`);
     concatInputs.push(`[v${i}][a${i}]`);

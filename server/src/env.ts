@@ -19,6 +19,11 @@ const EnvSchema = z.object({
   // ffmpeg binary path. Empty = use the bundled @ffmpeg-installer binary.
   // Point this at a system/Docker ffmpeg when you have one.
   FFMPEG_PATH: z.string().default(''),
+  // ffprobe binary path. Empty = use the bundled @ffprobe-installer binary.
+  FFPROBE_PATH: z.string().default(''),
+  // TrueType font for the overlay/watermark text. Empty = overlay is skipped
+  // (the rest of the video is still produced). In Docker we install DejaVu.
+  FONT_PATH: z.string().default(''),
   // Send cookies only over HTTPS. Defaults to on in production. Set to 'false'
   // to test a production build over plain HTTP locally.
   COOKIE_SECURE: z.enum(['true', 'false']).optional(),

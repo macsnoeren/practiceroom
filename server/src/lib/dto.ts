@@ -29,6 +29,7 @@ import type {
   Role,
   RoomDto,
   SchoolDto,
+  SchoolSettingsDto,
   UserDto,
 } from '@practiceroom/shared';
 
@@ -56,6 +57,18 @@ export function toSchoolDto(school: School): SchoolDto {
     id: school.id,
     name: school.name,
     createdAt: school.createdAt.toISOString(),
+  };
+}
+
+export function toSchoolSettingsDto(school: School): SchoolSettingsDto {
+  return {
+    overlayText: school.overlayText,
+    intro: school.introMimeType
+      ? { mimeType: school.introMimeType, sizeBytes: school.introSizeBytes }
+      : null,
+    outro: school.outroMimeType
+      ? { mimeType: school.outroMimeType, sizeBytes: school.outroSizeBytes }
+      : null,
   };
 }
 

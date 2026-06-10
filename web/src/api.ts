@@ -9,6 +9,7 @@ import {
   LessonTagDtoSchema,
   LibraryItemDtoSchema,
   MaterialDtoSchema,
+  SchoolSettingsDtoSchema,
   PairingCodeResultSchema,
   PlaybackUrlSchema,
   RecordingDtoSchema,
@@ -22,8 +23,10 @@ import {
   type CreateLibraryItemInput,
   type CreateMaterialInput,
   type CreateUserInput,
+  type BrandingSlot,
   type SaveFromLessonInput,
   type UpdateLibraryItemInput,
+  type UpdateSettingsInput,
   type LoginInput,
   type RegisterSchoolInput,
   type SchoolDto,
@@ -273,6 +276,39 @@ export const api = {
   createHoliday: (input: CreateHolidayInput) =>
     request('/api/holidays', HolidayDtoSchema, { method: 'POST', body: JSON.stringify(input) }),
   deleteHoliday: (id: string) => requestVoid(`/api/holidays/${id}`, { method: 'DELETE' }),
+
+  // School branding for combined lesson videos (admin).
+  getSettings: () => request('/api/settings', SchoolSettingsDtoSchema),
+  updateSettings: (input: UpdateSettingsInput) =>
+    request('/api/settings', SchoolSettingsDtoSchema, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  deleteBranding: (slot: BrandingSlot) =>
+    request(`/api/settings/branding/${slot}`, SchoolSettingsDtoSchema, { method: 'DELETE' }),
+  uploadBranding: async (slot: BrandingSlot, file: File, onProgress?: (pct: number) => void) => {
+    const CHUNK = 8 * 1024 * 1024;
+    let index = 0;
+    for (let offset = 0; offset < file.size; offset += CHUNK) {
+      const blob = file.slice(offset, offset + CHUNK);
+      const res = await fetch(`/api/settings/branding/${slot}/chunks?index=${index}`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/octet-stream' },
+        body: blob,
+      });
+      if (!res.ok) throw new ApiError(res.status, 'Upload mislukt');
+      index += 1;
+      onProgress?.(Math.min(100, Math.round(((offset + blob.size) / file.size) * 100)));
+    }
+    const type = file.type || 'video/mp4';
+    const done = await fetch(
+      `/api/settings/branding/${slot}/complete?mimeType=${encodeURIComponent(type)}`,
+      { method: 'POST', credentials: 'same-origin' },
+    );
+    if (!done.ok) throw new ApiError(done.status, 'Voltooien mislukt');
+    return SchoolSettingsDtoSchema.parse(await done.json());
+  },
 
   listRooms: () => request('/api/rooms', z.array(RoomDtoSchema)),
   createRoom: (name: string) =>

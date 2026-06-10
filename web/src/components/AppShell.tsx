@@ -12,6 +12,7 @@ import { StudentLessonDashboard } from './StudentLessonDashboard.js';
 import { HolidayManagement } from './HolidayManagement.js';
 import { RoomManagement } from './RoomManagement.js';
 import { LibraryManagement } from './LibraryManagement.js';
+import { SettingsManagement } from './SettingsManagement.js';
 import { ProfilePage } from './ProfilePage.js';
 import { SiteFooter } from './SiteFooter.js';
 
@@ -88,6 +89,11 @@ export function AppShell({
             <NavLink to="/users" className={navClass}>
               <span className="ico">👥</span> Gebruikers
             </NavLink>
+            {isAdmin && (
+              <NavLink to="/settings" className={navClass}>
+                <span className="ico">⚙️</span> Instellingen
+              </NavLink>
+            )}
           </>
         ) : (
           <NavLink to="/lessons" className={navClass}>
@@ -185,6 +191,19 @@ export function AppShell({
                   </Page>
                 }
               />
+              {isAdmin && (
+                <Route
+                  path="/settings"
+                  element={
+                    <Page
+                      title="Instellingen"
+                      subtitle="Intro/outro en watermerk voor de lesvideo's."
+                    >
+                      <SettingsManagement />
+                    </Page>
+                  }
+                />
+              )}
             </>
           ) : (
             <>

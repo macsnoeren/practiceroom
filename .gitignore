@@ -32,3 +32,8 @@ coverage/
 # recordings storage
 storage/
 storage-test/
+
+# local sample/media files
+*.mkv
+*.mp4
+*.webm

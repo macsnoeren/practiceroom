@@ -389,6 +389,27 @@ export const LibraryItemDtoSchema = z.object({
 });
 export type LibraryItemDto = z.infer<typeof LibraryItemDtoSchema>;
 
+/* ---- School settings (branding) ----------------------------------------- */
+
+export const BRANDING_SLOTS = ['intro', 'outro'] as const;
+export const BrandingSlotSchema = z.enum(BRANDING_SLOTS);
+export type BrandingSlot = (typeof BRANDING_SLOTS)[number];
+
+/** Admin updates the watermark text shown on every combined lesson video. */
+export const UpdateSettingsSchema = z.object({
+  overlayText: z.string().trim().max(200).nullable(),
+});
+export type UpdateSettingsInput = z.infer<typeof UpdateSettingsSchema>;
+
+const BrandingClipSchema = z.object({ mimeType: z.string(), sizeBytes: z.number() }).nullable();
+
+export const SchoolSettingsDtoSchema = z.object({
+  overlayText: z.string().nullable(),
+  intro: BrandingClipSchema,
+  outro: BrandingClipSchema,
+});
+export type SchoolSettingsDto = z.infer<typeof SchoolSettingsDtoSchema>;
+
 /** A timeline marker placed during a lesson (for later review/editing). */
 export const CreateTagSchema = z.object({
   label: z.string().trim().min(1).max(120),

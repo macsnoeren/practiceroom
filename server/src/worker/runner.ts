@@ -1,16 +1,28 @@
 import { spawn } from 'node:child_process';
+import { writeFile } from 'node:fs/promises';
 import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import { prisma } from '../db.js';
 import { env } from '../env.js';
-import { buildBlackVideoArgs, buildConcatArgs, buildSilentAudioArgs } from '../lib/composite.js';
+import {
+  buildBlackVideoArgs,
+  buildCanonicalExternalArgs,
+  buildConcatArgs,
+  buildSilentAudioArgs,
+} from '../lib/composite.js';
+import { probeStreams } from '../lib/probe.js';
 import type { Recording } from '@prisma/client';
 import {
+  brandingExists,
+  brandingPath,
   compositePath,
   compositeSize,
   ensureCompositeDir,
+  normalizedBrandingPath,
   normalizedSegmentPath,
+  overlayTextPath,
   recordingPath,
   removeFile,
+  type BrandingSlot,
 } from '../lib/storage.js';
 
 export type JobResult = 'idle' | 'done' | 'waiting' | 'failed';
@@ -62,6 +74,31 @@ async function normalizeSegment(
 }
 
 /**
+ * Returns a canonicalised intro/outro clip path for a school, or null when none
+ * is set. The clip is re-encoded to match the composite (and gains a black
+ * frame / silence if it lacks one), recorded in `temps` for cleanup.
+ */
+async function brandingInput(
+  school: { id: string; introMimeType: string | null; outroMimeType: string | null } | null,
+  slot: BrandingSlot,
+  lessonId: string,
+  temps: string[],
+): Promise<string | null> {
+  if (!school) return null;
+  const mime = slot === 'intro' ? school.introMimeType : school.outroMimeType;
+  if (!mime) return null;
+  const src = brandingPath(school.id, slot);
+  if (!(await brandingExists(school.id, slot))) return null;
+
+  const { hasVideo, hasAudio } = await probeStreams(src);
+  if (!hasVideo && !hasAudio) return null;
+  const out = normalizedBrandingPath(lessonId, slot);
+  await runFfmpeg(buildCanonicalExternalArgs(src, out, hasVideo, hasAudio));
+  temps.push(out);
+  return out;
+}
+
+/**
  * Claims one queued composite job and processes it: concatenate the lesson's
  * completed recording segments (in time order) into one video. If segments are
  * still uploading, the job is returned to the queue to retry later.
@@ -104,15 +141,44 @@ export async function processQueuedJob(): Promise<JobResult> {
     await ensureCompositeDir(job.lessonId);
     const output = compositePath(job.lessonId);
 
+    // School branding: optional intro before / outro after, and a watermark.
+    const school = await prisma.school.findFirst({
+      where: { lessons: { some: { id: job.lessonId } } },
+    });
+
     // The concat step expects every segment to have both a video and an audio
     // stream. Segments captured as audio-only or video-without-sound are first
     // padded with a black frame / silent track so they stitch in cleanly.
     const temps: string[] = [];
     try {
-      const inputs = await Promise.all(
+      const lessonInputs = await Promise.all(
         completed.map((r) => normalizeSegment(job.lessonId, r, temps)),
       );
-      await runFfmpeg(buildConcatArgs(inputs, output));
+      const inputs: string[] = [];
+      const intro = await brandingInput(school, 'intro', job.lessonId, temps);
+      if (intro) inputs.push(intro);
+      inputs.push(...lessonInputs);
+      const outro = await brandingInput(school, 'outro', job.lessonId, temps);
+      if (outro) inputs.push(outro);
+
+      // Optional "do not distribute" watermark (only when a font is configured).
+      let overlay: { textFile: string; fontPath: string } | undefined;
+      const overlayText = school?.overlayText?.trim();
+      if (overlayText && env.FONT_PATH) {
+        const textFile = overlayTextPath(job.lessonId);
+        await writeFile(textFile, overlayText, 'utf8');
+        temps.push(textFile);
+        overlay = { textFile, fontPath: env.FONT_PATH };
+      }
+
+      try {
+        await runFfmpeg(buildConcatArgs(inputs, output, overlay ? { overlay } : {}));
+      } catch (err) {
+        // Never fail the whole video over a watermark/font issue: retry plain.
+        if (!overlay) throw err;
+        console.warn('[worker] overlay mislukt, opnieuw zonder watermerk:', err);
+        await runFfmpeg(buildConcatArgs(inputs, output));
+      }
     } finally {
       for (const temp of temps) await removeFile(temp);
     }
