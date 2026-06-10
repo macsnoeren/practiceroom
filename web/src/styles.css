@@ -611,6 +611,14 @@ th {
   border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
 }
 
+/* A holiday shown inline in the lesson timeline. */
+.lesson-item.holiday-row {
+  background: var(--warning-soft);
+  border-color: color-mix(in srgb, var(--warning) 30%, transparent);
+  border-style: dashed;
+  cursor: default;
+}
+
 .lesson-detail {
   border: 1px solid var(--border);
   border-top: 0;
