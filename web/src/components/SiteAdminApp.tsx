@@ -77,13 +77,21 @@ export function SiteAdminApp({
 function SchoolsCard({ onEnter }: { onEnter: (updated: UserDto) => void }) {
   const [schools, setSchools] = useState<SchoolSummaryDto[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [newName, setNewName] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const refresh = useCallback(async () => {
+    setError(null);
+    try {
+      setSchools(await api.listSchools());
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Laden mislukt');
+    }
+  }, []);
 
   useEffect(() => {
-    api
-      .listSchools()
-      .then(setSchools)
-      .catch((err: unknown) => setError(err instanceof ApiError ? err.message : 'Laden mislukt'));
-  }, []);
+    void refresh();
+  }, [refresh]);
 
   async function enter(id: string) {
     setError(null);
@@ -94,9 +102,39 @@ function SchoolsCard({ onEnter }: { onEnter: (updated: UserDto) => void }) {
     }
   }
 
+  async function create(e: FormEvent) {
+    e.preventDefault();
+    const name = newName.trim();
+    if (!name) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.createSchool(name);
+      setNewName('');
+      await refresh();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Aanmaken mislukt');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="card">
-      <h2>Scholen</h2>
+      <div className="row">
+        <h2>Scholen</h2>
+        <form onSubmit={create} className="inline-form">
+          <input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="Naam nieuwe school"
+            aria-label="Naam nieuwe school"
+          />
+          <button type="submit" disabled={busy || !newName.trim()}>
+            + School
+          </button>
+        </form>
+      </div>
       {error && <p className="error">{error}</p>}
       {!schools && !error && <p className="muted">Laden…</p>}
       {schools && schools.length === 0 && <p className="muted">Er zijn nog geen scholen.</p>}

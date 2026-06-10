@@ -265,6 +265,17 @@ a {
   min-height: 100vh;
 }
 
+.inline-form {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.inline-form input,
+.inline-form button {
+  margin: 0;
+}
+
 .page {
   max-width: 880px;
   margin: 0 auto;

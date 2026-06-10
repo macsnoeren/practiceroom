@@ -1,5 +1,10 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
-import { EnterSchoolSchema, SiteAdminSetupSchema, UpdateUserSchema } from '@practiceroom/shared';
+import {
+  CreateSchoolSchema,
+  EnterSchoolSchema,
+  SiteAdminSetupSchema,
+  UpdateUserSchema,
+} from '@practiceroom/shared';
 import { prisma } from '../db.js';
 import { cookieSecure } from '../env.js';
 import { hashPassword } from '../auth/password.js';
@@ -65,6 +70,15 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       include: { _count: { select: { users: true, lessons: true } } },
     });
     return schools.map(toSchoolSummaryDto);
+  });
+
+  // Create a new (empty) school. The site admin can then enter it to add users.
+  app.post('/api/admin/schools', async (request, reply) => {
+    requireSuperadmin(request);
+    const { name } = CreateSchoolSchema.parse(request.body);
+    const school = await prisma.school.create({ data: { name } });
+    audit(request, 'siteadmin.school.create', { schoolId: school.id });
+    return reply.code(201).send(toSchoolSummaryDto(school));
   });
 
   // Enter a school: from now on this superadmin session acts as that school's admin.

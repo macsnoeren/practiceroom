@@ -175,6 +175,10 @@ export type SiteAdminSetupInput = z.infer<typeof SiteAdminSetupSchema>;
 export const EnterSchoolSchema = z.object({ schoolId: z.string().min(1) });
 export type EnterSchoolInput = z.infer<typeof EnterSchoolSchema>;
 
+/** The site admin creates a new (empty) school. */
+export const CreateSchoolSchema = z.object({ name: nameField });
+export type CreateSchoolInput = z.infer<typeof CreateSchoolSchema>;
+
 /** A school in the site-admin overview, with a few counts. */
 export const SchoolSummaryDtoSchema = z.object({
   id: z.string(),

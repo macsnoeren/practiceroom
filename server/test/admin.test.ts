@@ -54,6 +54,17 @@ describe('site administration (superadmin)', () => {
     assert.equal(schools.statusCode, 200);
     assert.ok((schools.json() as { id: string }[]).some((s) => s.id === schoolId));
 
+    // The site admin can create a new (empty) school.
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/admin/schools',
+      headers: { cookie: superCookie },
+      payload: { name: 'Nieuwe School' },
+    });
+    assert.equal(created.statusCode, 201);
+    assert.equal(created.json().name, 'Nieuwe School');
+    assert.equal(created.json().userCount, 0);
+
     // Before entering a school, school-scoped routes are not available.
     assert.equal(
       (await app.inject({ method: 'GET', url: '/api/users', headers: { cookie: superCookie } }))

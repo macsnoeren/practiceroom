@@ -125,6 +125,11 @@ export const api = {
   setupSiteAdmin: (input: SiteAdminSetupInput) =>
     request('/api/admin/setup', UserDtoSchema, { method: 'POST', body: JSON.stringify(input) }),
   listSchools: () => request('/api/admin/schools', z.array(SchoolSummaryDtoSchema)),
+  createSchool: (name: string) =>
+    request('/api/admin/schools', SchoolSummaryDtoSchema, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
   enterSchool: (schoolId: string) =>
     request('/api/admin/enter', UserDtoSchema, {
       method: 'POST',
