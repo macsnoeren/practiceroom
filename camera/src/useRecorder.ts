@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { CropRect } from '@practiceroom/shared';
 import { ChunkUploader } from './upload.js';
 
 export type RecorderState = 'idle' | 'recording' | 'finishing' | 'error';
@@ -22,10 +23,14 @@ function pickMimeType(hasVideo: boolean): string | undefined {
 export function useRecorder(
   stream: MediaStream | null,
   activeRecording: { recordingId: string } | null,
+  crop: CropRect | null = null,
 ): RecorderState {
   const [state, setState] = useState<RecorderState>('idle');
   const streamRef = useRef(stream);
   streamRef.current = stream;
+  // Read at stop time, so the latest chosen crop is the one that's saved.
+  const cropRef = useRef(crop);
+  cropRef.current = crop;
 
   const recordingId = activeRecording?.recordingId;
 
@@ -55,8 +60,10 @@ export function useRecorder(
     recorder.onstop = () => {
       setState('finishing');
       const fallback = hasVideo ? 'video/webm' : 'audio/webm';
+      // A crop only applies to a captured video frame.
+      const crop = hasVideo ? cropRef.current : null;
       void uploader
-        .finish(mimeType ?? fallback, { hasVideo, hasAudio })
+        .finish(mimeType ?? fallback, { hasVideo, hasAudio, crop })
         .then(() => setState('idle'));
     };
 

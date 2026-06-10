@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { CropRectSchema } from '@practiceroom/shared';
 import { authenticateDevice } from '../auth/device.js';
 import { requireAuth, requireRole } from '../auth/plugin.js';
 import { prisma } from '../db.js';
@@ -70,7 +71,15 @@ export async function recordingRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/recordings/:id/complete', async (request) => {
     const device = await authenticateDevice(request);
     const { id } = request.params as RecordingParam;
-    const query = request.query as { mimeType?: string; hasVideo?: string; hasAudio?: string };
+    const query = request.query as {
+      mimeType?: string;
+      hasVideo?: string;
+      hasAudio?: string;
+      cropX?: string;
+      cropY?: string;
+      cropW?: string;
+      cropH?: string;
+    };
 
     const recording = await prisma.recording.findUnique({ where: { id } });
     if (!recording || recording.deviceId !== device.id) throw notFound('Opname niet gevonden');
@@ -79,6 +88,17 @@ export async function recordingRoutes(app: FastifyInstance): Promise<void> {
     // video without sound) so the composite worker can stitch it correctly.
     const hasVideo = query.hasVideo === undefined ? recording.hasVideo : query.hasVideo !== 'false';
     const hasAudio = query.hasAudio === undefined ? recording.hasAudio : query.hasAudio !== 'false';
+
+    // Optional crop rectangle chosen on the camera (fractions of the frame).
+    // Only stored when all four parts parse to a valid rectangle; otherwise the
+    // recording keeps no crop and the full frame is used.
+    const cropParsed = CropRectSchema.safeParse({
+      x: Number(query.cropX),
+      y: Number(query.cropY),
+      w: Number(query.cropW),
+      h: Number(query.cropH),
+    });
+    const crop = cropParsed.success ? cropParsed.data : null;
 
     const size = await recordingSize(id);
     const completed = await prisma.recording.update({
@@ -90,6 +110,10 @@ export async function recordingRoutes(app: FastifyInstance): Promise<void> {
         mimeType: query.mimeType ?? recording.mimeType,
         hasVideo,
         hasAudio,
+        cropX: crop?.x ?? null,
+        cropY: crop?.y ?? null,
+        cropW: crop?.w ?? null,
+        cropH: crop?.h ?? null,
       },
     });
 

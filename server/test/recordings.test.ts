@@ -170,6 +170,35 @@ describe('recordings: chunked upload and lifecycle', () => {
     assert.deepEqual(file, Buffer.concat(chunks));
   });
 
+  it('stores a valid crop rectangle on completion and ignores an invalid one', async () => {
+    const s = await lessonSetup('crop');
+
+    const cropped = await prisma.recording.create({
+      data: { lessonId: s.lessonId, deviceId: s.device.id, status: 'recording' },
+    });
+    await uploadChunk(cropped.id, s.device.token, 0, Buffer.from('AAAA'));
+    const ok = await app.inject({
+      method: 'POST',
+      url: `/api/recordings/${cropped.id}/complete?cropX=0.1&cropY=0.2&cropW=0.5&cropH=0.6`,
+      headers: { authorization: `Bearer ${s.device.token}` },
+    });
+    assert.equal(ok.statusCode, 200);
+    assert.deepEqual(ok.json().crop, { x: 0.1, y: 0.2, w: 0.5, h: 0.6 });
+
+    // A rectangle that runs off the frame is rejected and left unset.
+    const bad = await prisma.recording.create({
+      data: { lessonId: s.lessonId, deviceId: s.device.id, status: 'recording' },
+    });
+    await uploadChunk(bad.id, s.device.token, 0, Buffer.from('AAAA'));
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/recordings/${bad.id}/complete?cropX=0.8&cropY=0&cropW=0.5&cropH=0.5`,
+      headers: { authorization: `Bearer ${s.device.token}` },
+    });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().crop, null);
+  });
+
   it('rejects chunks from a different device', async () => {
     const s = await lessonSetup('auth');
     const recording = await prisma.recording.create({

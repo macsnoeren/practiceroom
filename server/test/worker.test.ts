@@ -153,6 +153,42 @@ describe('worker: composite video', () => {
     assert.ok(noVideo.join(' ').includes('color=c=black'));
   });
 
+  it('prepends a crop filter for cropped segments only (pure)', () => {
+    const args = buildConcatArgs(['a.webm', 'b.webm'], 'out.mp4', {
+      crops: [{ x: 0.1, y: 0.2, w: 0.5, h: 0.6 }, null],
+    });
+    const fc = args[args.indexOf('-filter_complex') + 1]!;
+    assert.ok(fc.includes('[0:v]crop=iw*0.5:ih*0.6:iw*0.1:ih*0.2,scale='));
+    // The second (uncropped) input goes straight to scale, with no crop.
+    assert.ok(fc.includes('[1:v]scale='));
+    assert.ok(!fc.includes('[1:v]crop='));
+    // An out-of-range rectangle is ignored rather than producing a bad filter.
+    const bad = buildConcatArgs(['a.webm'], 'out.mp4', {
+      crops: [{ x: 0.8, y: 0, w: 0.5, h: 0.5 }],
+    });
+    assert.ok(!bad.join(' ').includes('crop='));
+  });
+
+  it('composites a segment that has a crop rectangle', async () => {
+    const s = await setup('crop');
+    const rec = await prisma.recording.create({
+      data: {
+        lessonId: s.lessonId,
+        deviceId: s.deviceId,
+        status: 'completed',
+        cropX: 0.25,
+        cropY: 0.1,
+        cropW: 0.5,
+        cropH: 0.5,
+      },
+    });
+    await genWebm(recordingPath(rec.id), '640x480', 440);
+    await prisma.compositeVideo.create({ data: { lessonId: s.lessonId, status: 'queued' } });
+
+    assert.equal(await processQueuedJob(), 'done');
+    assert.ok((await stat(compositePath(s.lessonId))).size > 0);
+  });
+
   it('burns in the watermark text when a system font is available', async (t) => {
     const fonts = [
       'C:/Windows/Fonts/arial.ttf',

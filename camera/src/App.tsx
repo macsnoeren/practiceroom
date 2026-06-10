@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { PairDeviceSchema } from '@practiceroom/shared';
+import { PairDeviceSchema, type CropRect } from '@practiceroom/shared';
 import { ApiError, cameraApi, clearToken, getToken, setToken } from './api.js';
 import { CameraPreview } from './components/CameraPreview.js';
 import { useDeviceSocket } from './useDeviceSocket.js';
@@ -60,9 +60,10 @@ function PairedView({
   const { connected, activeRecording, sendFrame, gainCommand, reportGain, reportLevel } =
     useDeviceSocket();
   const [rawStream, setRawStream] = useState<MediaStream | null>(null);
+  const [crop, setCrop] = useState<CropRect | null>(null);
   const gain = gainCommand ?? 1;
   const stream = useMicGain(rawStream, gain);
-  const recorderState = useRecorder(stream, activeRecording);
+  const recorderState = useRecorder(stream, activeRecording, crop);
   useFramePublisher(stream, sendFrame, connected);
   useMicLevel(stream, reportLevel, connected);
 
@@ -94,7 +95,7 @@ function PairedView({
       )}
 
       <div className="card">
-        <CameraPreview onStream={setRawStream} disabled={isRecording} />
+        <CameraPreview onStream={setRawStream} onCrop={setCrop} disabled={isRecording} />
       </div>
     </>
   );

@@ -493,6 +493,24 @@ export const RECORDING_STATUSES = ['recording', 'completed', 'failed'] as const;
 export const RecordingStatusSchema = z.enum(RECORDING_STATUSES);
 export type RecordingStatus = (typeof RECORDING_STATUSES)[number];
 
+/**
+ * A crop rectangle, expressed as fractions (0–1) of the source frame: the
+ * camera draws it on its preview and the worker applies it server-side, so the
+ * full original is always preserved. The rectangle must lie within the frame
+ * and have a positive size.
+ */
+export const CropRectSchema = z
+  .object({
+    x: z.number().min(0).max(1),
+    y: z.number().min(0).max(1),
+    w: z.number().min(0).max(1),
+    h: z.number().min(0).max(1),
+  })
+  .refine((c) => c.w > 0 && c.h > 0 && c.x + c.w <= 1 && c.y + c.h <= 1, {
+    message: 'Ongeldig kader',
+  });
+export type CropRect = z.infer<typeof CropRectSchema>;
+
 export const RecordingDtoSchema = z.object({
   id: z.string(),
   lessonId: z.string(),
@@ -500,6 +518,7 @@ export const RecordingDtoSchema = z.object({
   status: RecordingStatusSchema,
   hasVideo: z.boolean(),
   hasAudio: z.boolean(),
+  crop: CropRectSchema.nullable(),
   sizeBytes: z.number(),
   startedAt: z.string(),
   completedAt: z.string().nullable(),

@@ -151,9 +151,36 @@ export function buildCanonicalExternalArgs(
   ];
 }
 
+/** A crop rectangle as fractions (0–1) of the source frame. */
+export interface CropRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Round to 4 decimals so the filter string stays short and stable. */
+function frac(n: number): string {
+  return String(Math.round(n * 1e4) / 1e4);
+}
+
+/**
+ * A `crop=…,` filter prefix that selects a sub-rectangle of the source before
+ * scaling, or '' when no (valid) crop is given. Expressed with iw/ih so it works
+ * regardless of the segment's actual resolution.
+ */
+function cropPrefix(crop: CropRect | null | undefined): string {
+  if (!crop) return '';
+  const { x, y, w, h } = crop;
+  if (w <= 0 || h <= 0 || x < 0 || y < 0 || x + w > 1 || y + h > 1) return '';
+  return `crop=iw*${frac(w)}:ih*${frac(h)}:iw*${frac(x)}:ih*${frac(y)},`;
+}
+
 interface ConcatOptions {
   /** Burn a watermark text onto every frame (needs a font file). */
   overlay?: { text: string; fontPath: string };
+  /** Per-input crop rectangle (aligned by index); null/undefined = no crop. */
+  crops?: (CropRect | null)[];
 }
 
 export function buildConcatArgs(
@@ -178,8 +205,9 @@ export function buildConcatArgs(
   const filters: string[] = [];
   const concatInputs: string[] = [];
   inputs.forEach((_, i) => {
+    const crop = cropPrefix(opts.crops?.[i]);
     filters.push(
-      `[${i}:v]scale=${COMPOSITE_WIDTH}:${COMPOSITE_HEIGHT}:force_original_aspect_ratio=decrease,` +
+      `[${i}:v]${crop}scale=${COMPOSITE_WIDTH}:${COMPOSITE_HEIGHT}:force_original_aspect_ratio=decrease,` +
         `pad=${COMPOSITE_WIDTH}:${COMPOSITE_HEIGHT}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${COMPOSITE_FPS}${drawtext}[v${i}]`,
     );
     filters.push(`[${i}:a]aresample=async=1[a${i}]`);

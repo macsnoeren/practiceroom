@@ -1,3 +1,4 @@
+import type { CropRect } from '@practiceroom/shared';
 import { getToken } from './api.js';
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -56,7 +57,10 @@ export class ChunkUploader {
   }
 
   /** Wait for the queue to drain, then mark the recording complete. */
-  async finish(mimeType: string, opts: { hasVideo: boolean; hasAudio: boolean }): Promise<void> {
+  async finish(
+    mimeType: string,
+    opts: { hasVideo: boolean; hasAudio: boolean; crop?: CropRect | null },
+  ): Promise<void> {
     if (this.done) return;
     this.done = true;
     while (this.queue.length > 0 || this.running) await delay(200);
@@ -68,6 +72,12 @@ export class ChunkUploader {
       hasVideo: String(opts.hasVideo),
       hasAudio: String(opts.hasAudio),
     });
+    if (opts.crop) {
+      params.set('cropX', String(opts.crop.x));
+      params.set('cropY', String(opts.crop.y));
+      params.set('cropW', String(opts.crop.w));
+      params.set('cropH', String(opts.crop.h));
+    }
     await fetch(`/api/recordings/${this.recordingId}/complete?${params.toString()}`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}` },

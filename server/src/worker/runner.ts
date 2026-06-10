@@ -9,6 +9,7 @@ import {
   buildCanonicalExternalArgs,
   buildConcatArgs,
   buildSilentAudioArgs,
+  type CropRect,
 } from '../lib/composite.js';
 import { probeStreams } from '../lib/probe.js';
 import type { Recording } from '@prisma/client';
@@ -34,6 +35,12 @@ const DEFAULT_BRANDING: Record<BrandingSlot, string> = {
   intro: fileURLToPath(new URL('../../assets/branding/intro.mkv', import.meta.url)),
   outro: fileURLToPath(new URL('../../assets/branding/outro.mkv', import.meta.url)),
 };
+
+/** The crop rectangle stored on a recording, or null when none was chosen. */
+function recordingCrop(r: Recording): CropRect | null {
+  if (r.cropX === null || r.cropY === null || r.cropW === null || r.cropH === null) return null;
+  return { x: r.cropX, y: r.cropY, w: r.cropW, h: r.cropH };
+}
 
 async function fileExists(path: string): Promise<boolean> {
   try {
@@ -175,12 +182,23 @@ export async function processQueuedJob(): Promise<JobResult> {
       const lessonInputs = await Promise.all(
         completed.map((r) => normalizeSegment(job.lessonId, r, temps)),
       );
+      // Crops are aligned by input index; intro/outro clips are never cropped.
       const inputs: string[] = [];
+      const crops: (CropRect | null)[] = [];
       const intro = await brandingInput(school, 'intro', job.lessonId, temps);
-      if (intro) inputs.push(intro);
-      inputs.push(...lessonInputs);
+      if (intro) {
+        inputs.push(intro);
+        crops.push(null);
+      }
+      lessonInputs.forEach((input, i) => {
+        inputs.push(input);
+        crops.push(recordingCrop(completed[i]!));
+      });
       const outro = await brandingInput(school, 'outro', job.lessonId, temps);
-      if (outro) inputs.push(outro);
+      if (outro) {
+        inputs.push(outro);
+        crops.push(null);
+      }
 
       // Optional "do not distribute" watermark (only when a font is configured).
       let overlay: { text: string; fontPath: string } | undefined;
@@ -190,12 +208,12 @@ export async function processQueuedJob(): Promise<JobResult> {
       }
 
       try {
-        await runFfmpeg(buildConcatArgs(inputs, output, overlay ? { overlay } : {}));
+        await runFfmpeg(buildConcatArgs(inputs, output, overlay ? { overlay, crops } : { crops }));
       } catch (err) {
         // Never fail the whole video over a watermark/font issue: retry plain.
         if (!overlay) throw err;
         console.warn('[worker] overlay mislukt, opnieuw zonder watermerk:', err);
-        await runFfmpeg(buildConcatArgs(inputs, output));
+        await runFfmpeg(buildConcatArgs(inputs, output, { crops }));
       }
     } finally {
       for (const temp of temps) await removeFile(temp);

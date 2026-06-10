@@ -183,6 +183,12 @@ model Recording {
   mimeType       String?
   hasVideo       Boolean   @default(true)
   hasAudio       Boolean   @default(true)
+  // Optional crop rectangle as fractions (0–1) of the source frame, chosen on
+  // the camera. All-null means no crop; the worker applies it before scaling.
+  cropX          Float?
+  cropY          Float?
+  cropW          Float?
+  cropH          Float?
   receivedChunks Int       @default(0)
   sizeBytes      Int       @default(0)
   startedAt      DateTime  @default(now())

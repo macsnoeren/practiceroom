@@ -229,6 +229,41 @@ button:disabled {
   font-size: 1.1rem;
 }
 
+/* Crop selector overlaid exactly on the camera preview. */
+.preview-wrap {
+  position: relative;
+  line-height: 0;
+}
+
+.crop-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden; /* clip the dimming shadow to the video box */
+  border-radius: var(--radius-sm);
+  cursor: crosshair;
+  touch-action: none; /* we handle the drag gesture ourselves */
+}
+
+.crop-layer.disabled {
+  cursor: default;
+  pointer-events: none;
+}
+
+.crop-rect {
+  position: absolute;
+  border: 2px dashed #fff;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+.crop-controls {
+  margin-top: 0.5rem;
+}
+
+.crop-controls button {
+  margin-left: 0.25rem;
+}
+
 .card.recording {
   border-color: var(--danger);
   background: color-mix(in srgb, var(--danger) 12%, var(--surface));

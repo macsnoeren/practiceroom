@@ -216,6 +216,13 @@ export function toHolidayDto(holiday: Holiday): HolidayDto {
 }
 
 export function toRecordingDto(recording: Recording): RecordingDto {
+  const crop =
+    recording.cropX !== null &&
+    recording.cropY !== null &&
+    recording.cropW !== null &&
+    recording.cropH !== null
+      ? { x: recording.cropX, y: recording.cropY, w: recording.cropW, h: recording.cropH }
+      : null;
   return {
     id: recording.id,
     lessonId: recording.lessonId,
@@ -223,6 +230,7 @@ export function toRecordingDto(recording: Recording): RecordingDto {
     status: recording.status as RecordingStatus,
     hasVideo: recording.hasVideo,
     hasAudio: recording.hasAudio,
+    crop,
     sizeBytes: recording.sizeBytes,
     startedAt: recording.startedAt.toISOString(),
     completedAt: recording.completedAt?.toISOString() ?? null,
