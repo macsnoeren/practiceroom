@@ -1,30 +1,30 @@
 :root {
-  /* Palette */
-  --primary: #5b54e6; /* indigo / violet */
-  --primary-hover: #4b44d4;
-  --primary-soft: #ecebfd;
-  --secondary: #2563eb; /* blue */
-  --accent: #14b8a6; /* turquoise */
-  --success: #16a34a;
-  --success-soft: #e8f8ee;
-  --warning: #ea580c;
-  --warning-soft: #fff3e9;
-  --danger: #dc2626;
-  --danger-soft: #fdecec;
+  /* Palette — grounded in the logo: violet play button, navy wordmark, cyan tick */
+  --primary: #5a37e0; /* logo violet */
+  --primary-hover: #4a2bc8;
+  --primary-soft: #e9e5fb;
+  --secondary: #3a5bdc; /* indigo-blue */
+  --accent: #11a7e6; /* logo cyan (the tick) */
+  --success: #15924a;
+  --success-soft: #e3f4ea;
+  --warning: #d9620a;
+  --warning-soft: #fbeede;
+  --danger: #d62b2b;
+  --danger-soft: #fae6e5;
 
-  /* Neutrals / surfaces */
-  --bg: #f6f7f9;
+  /* Neutrals / surfaces — tinted toward indigo so white cards carry weight */
+  --bg: #e9eaf6;
   --surface: #ffffff;
-  --surface-2: #f3f4f6;
-  --border: #e6e8ec;
-  --border-strong: #d4d8df;
-  --text: #0f1222;
-  --muted: #6b7280;
+  --surface-2: #f1f0fb;
+  --border: #d7d8ea;
+  --border-strong: #bfc0db;
+  --text: #161a3e; /* deep navy from the wordmark */
+  --muted: #565d7a;
 
   --radius: 14px;
   --radius-sm: 9px;
-  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05);
-  --shadow: 0 8px 30px rgba(16, 24, 40, 0.1);
+  --shadow-sm: 0 1px 2px rgba(22, 26, 62, 0.07);
+  --shadow: 0 12px 34px rgba(22, 26, 62, 0.14);
   --font: 'Inter', 'SF Pro Text', Geist, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 
   color-scheme: light;
@@ -66,6 +66,14 @@
 body {
   margin: 0;
   background: var(--bg);
+}
+
+/* Light theme: a soft brand glow (violet top-right, cyan bottom-left) for depth. */
+:root[data-theme='light'] body {
+  background:
+    radial-gradient(1100px 560px at 100% -8%, rgba(90, 55, 224, 0.1), transparent 60%),
+    radial-gradient(950px 520px at -8% 108%, rgba(17, 167, 230, 0.08), transparent 55%), var(--bg);
+  background-attachment: fixed;
 }
 
 h1 {
