@@ -393,3 +393,60 @@ describe('recordings: signed playback', () => {
     );
   });
 });
+
+describe('recordings: deleting segments', () => {
+  it('lets a teacher delete a segment and rebuilds (or removes) the combined video', async () => {
+    const s = await lessonSetup('del');
+    const studentCookie = await login(app, 'del-s@example.com');
+
+    const recA = await prisma.recording.create({
+      data: { lessonId: s.lessonId, deviceId: s.device.id, status: 'completed' },
+    });
+    const recB = await prisma.recording.create({
+      data: { lessonId: s.lessonId, deviceId: s.device.id, status: 'completed' },
+    });
+    await prisma.compositeVideo.create({ data: { lessonId: s.lessonId, status: 'completed' } });
+
+    // A student may not delete segments.
+    assert.equal(
+      (
+        await app.inject({
+          method: 'DELETE',
+          url: `/api/recordings/${recA.id}`,
+          headers: { cookie: studentCookie },
+        })
+      ).statusCode,
+      403,
+    );
+
+    // Deleting one segment requeues the combined video for a rebuild.
+    assert.equal(
+      (
+        await app.inject({
+          method: 'DELETE',
+          url: `/api/recordings/${recA.id}`,
+          headers: { cookie: s.teacherCookie },
+        })
+      ).statusCode,
+      204,
+    );
+    assert.equal(await prisma.recording.count({ where: { lessonId: s.lessonId } }), 1);
+    assert.equal(
+      (await prisma.compositeVideo.findUnique({ where: { lessonId: s.lessonId } }))?.status,
+      'queued',
+    );
+
+    // Deleting the last segment removes the combined video entirely.
+    assert.equal(
+      (
+        await app.inject({
+          method: 'DELETE',
+          url: `/api/recordings/${recB.id}`,
+          headers: { cookie: s.teacherCookie },
+        })
+      ).statusCode,
+      204,
+    );
+    assert.equal(await prisma.compositeVideo.findUnique({ where: { lessonId: s.lessonId } }), null);
+  });
+});

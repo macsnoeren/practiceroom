@@ -1,16 +1,22 @@
 import type { FastifyInstance } from 'fastify';
 import { authenticateDevice } from '../auth/device.js';
-import { requireAuth } from '../auth/plugin.js';
+import { requireAuth, requireRole } from '../auth/plugin.js';
 import { prisma } from '../db.js';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
-import { canViewLesson } from '../lib/lesson-access.js';
+import { canManageLesson, canViewLesson } from '../lib/lesson-access.js';
 import {
   PLAYBACK_TTL_MS,
   recordingResource,
   signPlayback,
   verifyPlayback,
 } from '../lib/signing.js';
-import { appendChunk, recordingPath, recordingSize } from '../lib/storage.js';
+import {
+  appendChunk,
+  compositePath,
+  recordingPath,
+  recordingSize,
+  removeFile,
+} from '../lib/storage.js';
 import { streamFile } from '../lib/stream.js';
 import { toRecordingDto } from '../lib/dto.js';
 
@@ -91,6 +97,51 @@ export async function recordingRoutes(app: FastifyInstance): Promise<void> {
     // that explicitly via "finish", which also queues the composite worker.
     return toRecordingDto(completed);
   });
+
+  // Staff deletes a recorded segment. If the lesson already has a combined
+  // video, it is rebuilt from the remaining segments (or removed if none left).
+  app.delete(
+    '/api/recordings/:id',
+    { preHandler: requireRole('admin', 'teacher') },
+    async (request, reply) => {
+      const me = requireAuth(request);
+      const { id } = request.params as RecordingParam;
+      const recording = await prisma.recording.findUnique({
+        where: { id },
+        include: { lesson: { include: { composite: true } } },
+      });
+      if (!recording || recording.lesson.schoolId !== me.schoolId) {
+        throw notFound('Opname niet gevonden');
+      }
+      if (!canManageLesson(me, recording.lesson)) throw forbidden();
+      if (recording.status === 'recording') throw badRequest('Stop de opname eerst');
+
+      await removeFile(recordingPath(id));
+      await prisma.recording.delete({ where: { id } });
+
+      const composite = recording.lesson.composite;
+      if (composite) {
+        const remaining = await prisma.recording.count({
+          where: { lessonId: recording.lessonId, status: 'completed' },
+        });
+        if (remaining > 0) {
+          // Rebuild the combined video without the deleted segment.
+          await prisma.compositeVideo.update({
+            where: { id: composite.id },
+            data: { status: 'queued', error: null },
+          });
+        } else {
+          await removeFile(compositePath(recording.lessonId));
+          await prisma.compositeVideo.delete({ where: { id: composite.id } });
+          await prisma.lesson.update({
+            where: { id: recording.lessonId },
+            data: { status: 'recorded' },
+          });
+        }
+      }
+      return reply.code(204).send();
+    },
+  );
 
   /* ---- Playback (staff/student, cookie session) ---------------------------- */
 

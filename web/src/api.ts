@@ -294,6 +294,8 @@ export const api = {
     request(`/api/lessons/${lessonId}/recording/finish`, CompositeVideoDtoSchema, {
       method: 'POST',
     }),
+  deleteRecording: (recordingId: string) =>
+    requestVoid(`/api/recordings/${recordingId}`, { method: 'DELETE' }),
   getPlaybackUrl: (recordingId: string) =>
     request(`/api/recordings/${recordingId}/playback-url`, PlaybackUrlSchema),
   getCompositePlaybackUrl: (lessonId: string) =>

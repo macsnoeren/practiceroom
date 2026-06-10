@@ -122,6 +122,11 @@ export function LessonDashboard() {
     }
   }
 
+  async function removeSegment(recordingId: string) {
+    if (!window.confirm('Dit segment verwijderen? De lesvideo wordt opnieuw samengesteld.')) return;
+    await run(() => api.deleteRecording(recordingId), 'Verwijderen mislukt');
+  }
+
   async function toggleDevice(deviceId: string, checked: boolean) {
     if (!detail) return;
     const ids = new Set(detail.devices.map((d) => d.id));
@@ -295,6 +300,15 @@ export function LessonDashboard() {
                   {r.hasVideo && !r.hasAudio && <span className="tag">zonder geluid</span>}{' '}
                   {r.sizeBytes > 0 && <span className="muted">{formatBytes(r.sizeBytes)}</span>}
                 </div>
+                {r.status !== 'recording' && (
+                  <button
+                    type="button"
+                    className="linkbtn danger"
+                    onClick={() => void removeSegment(r.id)}
+                  >
+                    Verwijderen
+                  </button>
+                )}
               </li>
             ))}
           </ul>

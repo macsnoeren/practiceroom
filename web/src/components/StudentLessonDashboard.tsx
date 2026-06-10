@@ -4,7 +4,6 @@ import type { LessonDetailDto } from '@practiceroom/shared';
 import { ApiError, api } from '../api.js';
 import { formatWhen } from '../format.js';
 import { CompositePlayer } from './CompositePlayer.js';
-import { LessonPlayer } from './LessonPlayer.js';
 import { MaterialView } from './MaterialView.js';
 
 /** A student's own per-lesson dashboard: watch the recording back, see the
@@ -31,7 +30,6 @@ export function StudentLessonDashboard({ meId, backTo }: { meId: string; backTo:
   if (!detail) return <p className="muted">Laden…</p>;
 
   const isStudent = detail.student.id === meId;
-  const hasRecording = detail.recordings.some((r) => r.status === 'completed');
 
   return (
     <div>
@@ -56,12 +54,8 @@ export function StudentLessonDashboard({ meId, backTo }: { meId: string; backTo:
       <div className="card">
         <h2>Terugkijken</h2>
         <CompositePlayer lessonId={detail.id} composite={detail.composite} />
-        <LessonPlayer
-          recordings={detail.recordings}
-          deviceName={(deviceId) => detail.devices.find((d) => d.id === deviceId)?.name ?? 'Camera'}
-        />
-        {!hasRecording && !detail.composite && (
-          <p className="muted">Na de les verschijnt hier de opname om terug te kijken.</p>
+        {!detail.composite && (
+          <p className="muted">Na de les verschijnt hier de lesvideo om terug te kijken.</p>
         )}
       </div>
 
