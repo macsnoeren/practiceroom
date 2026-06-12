@@ -23,9 +23,28 @@ PREVIEW_QUALITY = 8  # ffmpeg -q:v (2=best … 31=worst)
 VIDEO_ENCODER = os.environ.get("PR_AGENT_VENC", "libx264")
 FFMPEG_BIN = os.environ.get("PR_AGENT_FFMPEG", "ffmpeg")
 
+# Devices whose path starts with this use a synthesised ffmpeg source instead of
+# real hardware — handy for testing in Docker without a camera/microphone.
+TEST_PREFIX = "test:"
+
 
 def ffmpeg_bin() -> str:
     return FFMPEG_BIN
+
+
+def _video_input(device: str) -> list[str]:
+    """ffmpeg input args for a camera (or a synthetic test pattern)."""
+    if device.startswith(TEST_PREFIX):
+        # -re plays the generated frames at real time, like a live camera would.
+        return ["-re", "-f", "lavfi", "-i", "testsrc=size=640x480:rate=15"]
+    return ["-f", "v4l2", "-i", device]
+
+
+def _audio_input(device: str) -> list[str]:
+    """ffmpeg input args for a microphone (or a synthetic test tone)."""
+    if device.startswith(TEST_PREFIX):
+        return ["-re", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000"]
+    return ["-f", "alsa", "-i", device]
 
 
 def _video_encode_args() -> list[str]:
@@ -62,10 +81,7 @@ def build_preview_command(video_device: str, jpeg_path: str) -> list[str]:
         "-hide_banner",
         "-loglevel",
         "error",
-        "-f",
-        "v4l2",
-        "-i",
-        video_device,
+        *_video_input(video_device),
         "-vf",
         f"scale={PREVIEW_WIDTH}:-2",
         "-r",
@@ -104,11 +120,11 @@ def build_record_command(
     audio_index = -1
     idx = 0
     if has_video:
-        args += ["-f", "v4l2", "-i", video_device]
+        args += _video_input(video_device)
         video_index = idx
         idx += 1
     if has_audio:
-        args += ["-f", "alsa", "-i", audio_device]
+        args += _audio_input(audio_device)
         audio_index = idx
         idx += 1
 

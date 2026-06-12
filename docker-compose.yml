@@ -67,5 +67,24 @@ services:
     depends_on:
       - server
 
+  # Optional: the headless Pi camera agent, for testing without hardware. It
+  # runs synthetic test cameras (PR_AGENT_FAKE) and is only started with the
+  # "agent" profile:  docker compose --profile agent up -d --build
+  # Then open http://localhost:8088 and set the server URL to http://server:3000.
+  agent:
+    build:
+      context: ./pi-agent
+    profiles: ['agent']
+    restart: unless-stopped
+    ports:
+      - '8088:8088'
+    environment:
+      PR_AGENT_FAKE: '2' # expose two synthetic test cameras
+    volumes:
+      - agentdata:/root/.practiceroom-agent
+    depends_on:
+      - server
+
 volumes:
   appdata:
+  agentdata:

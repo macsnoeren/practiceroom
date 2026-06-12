@@ -73,6 +73,41 @@ agent reconnects on its own after a reboot.
 See [`practiceroom-agent.service`](practiceroom-agent.service) for a systemd unit
 that starts the agent at boot and restarts it on failure.
 
+## Test in Docker (no hardware)
+
+You can exercise the whole pipeline — pairing, preview, recording, chunked
+upload, compositing — without a real camera, using ffmpeg's built-in test
+source. The root `docker-compose.yml` has an optional `agent` service behind the
+`agent` profile that exposes two **synthetic test cameras** (`PR_AGENT_FAKE=2`).
+
+From the repository root, with the normal stack configured (`.env` present):
+
+```bash
+docker compose --profile agent up -d --build
+```
+
+Then:
+
+1. Open the dashboard at **http://localhost:8080**, log in, and under **Camera's**
+   add a camera to get a **koppelcode**.
+2. Open the agent page at **http://localhost:8088**. Set the server URL to
+   **http://server:3000** (the API container on the compose network) and save.
+3. On a test camera: save its settings, then paste the koppelcode and **Koppelen**.
+   It turns **Online** and shows a moving test pattern in the regiekamer.
+4. Plan a lesson with that camera, start recording from the regiekamer, stop, and
+   finish the lesson — the combined video is built from the uploaded test footage.
+
+Build/run the image on its own (just the config page, no server) with:
+
+```bash
+docker build -t pr-agent ./pi-agent
+docker run --rm -e PR_AGENT_FAKE=2 -p 8088:8088 pr-agent
+```
+
+To run synthetic cameras on real hardware too, set `PR_AGENT_FAKE` and skip the
+device pass-through; for real cameras, give the container access to the V4L2/ALSA
+devices (e.g. `--device /dev/video0`) and leave `PR_AGENT_FAKE` unset.
+
 ## Notes & limitations
 
 - Only one process can hold a V4L2 camera at a time, so the agent runs a

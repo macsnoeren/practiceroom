@@ -34,12 +34,25 @@ def _run(cmd: list[str]) -> str:
         return ""
 
 
+def _fake_count() -> int:
+    """Number of synthetic test cameras to expose (PR_AGENT_FAKE), else 0."""
+    raw = os.environ.get("PR_AGENT_FAKE", "")
+    if not raw:
+        return 0
+    return int(raw) if raw.isdigit() else 1
+
+
 def list_video_devices() -> list[VideoDevice]:
     """List capture cameras, preferring stable /dev/v4l/by-id/* paths.
 
     `v4l2-ctl --list-devices` groups nodes by hardware and gives a readable
     name; we map each to its first /dev/video node. Falls back to a plain glob.
+    With PR_AGENT_FAKE set, returns synthetic test cameras (no hardware needed).
     """
+    fake = _fake_count()
+    if fake:
+        return [VideoDevice(path=f"test:{i}", name=f"Testcamera {i + 1}") for i in range(fake)]
+
     devices: list[VideoDevice] = []
     by_id = {os.path.realpath(p): p for p in glob.glob("/dev/v4l/by-id/*")}
 
@@ -71,7 +84,10 @@ def list_video_devices() -> list[VideoDevice]:
 
 
 def list_audio_devices() -> list[AudioDevice]:
-    """List ALSA capture devices via `arecord -l`."""
+    """List ALSA capture devices via `arecord -l` (or a synthetic test mic)."""
+    if _fake_count():
+        return [AudioDevice(alsa="test:0", name="Testmicrofoon")]
+
     devices: list[AudioDevice] = []
     listing = _run(["arecord", "-l"])
     # Lines look like: "card 1: U0x46d0x825 [..], device 0: USB Audio [USB Audio]"
