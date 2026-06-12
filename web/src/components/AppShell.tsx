@@ -12,6 +12,7 @@ import { StudentLessonDashboard } from './StudentLessonDashboard.js';
 import { HolidayManagement } from './HolidayManagement.js';
 import { RoomManagement } from './RoomManagement.js';
 import { LibraryManagement } from './LibraryManagement.js';
+import { Regiekamer } from './Regiekamer.js';
 import { SettingsManagement } from './SettingsManagement.js';
 import { ProfilePage } from './ProfilePage.js';
 import { SiteFooter } from './SiteFooter.js';
@@ -73,6 +74,9 @@ export function AppShell({
       <nav className="sidebar">
         {isStaff ? (
           <>
+            <NavLink to="/regiekamer" className={navClass}>
+              <span className="ico">🎛️</span> Regiekamer
+            </NavLink>
             <NavLink to="/lessons" className={navClass}>
               <span className="ico">🎵</span> Lessen
             </NavLink>
@@ -120,6 +124,10 @@ export function AppShell({
         <Routes>
           {isStaff ? (
             <>
+              <Route
+                path="/regiekamer"
+                element={<Regiekamer user={user} />}
+              />
               <Route
                 path="/lessons"
                 element={
