@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { type DeviceDto, type LessonDetailDto, type LessonDto, type UserDto } from '@practiceroom/shared';
+import { type DeviceDto, type LessonDetailDto, type LessonDto, type RecordingCompleted, type UserDto } from '@practiceroom/shared';
 import { ApiError, api } from '../api.js';
 import { usePresence } from '../usePresence.js';
 import { Modal } from './Modal.js';
@@ -21,7 +21,22 @@ function isToday(iso: string): boolean {
 
 export function Regiekamer({ user }: { user: UserDto }) {
   const navigate = useNavigate();
-  const { online, statuses, frames, gains, levels, setGain } = usePresence({ collectFrames: true });
+  const { online, statuses, frames, gains, levels, setGain } = usePresence({
+    collectFrames: true,
+    onRecordingCompleted: useCallback(
+      ({ lessonId }: RecordingCompleted) => {
+        // When a device finishes uploading, refresh the active lesson so the
+        // segment size and status update without the teacher needing to reload.
+        setActiveLessonId((current) => {
+          if (current === lessonId) {
+            api.getLesson(lessonId).then(setActiveLessonDetail).catch(() => undefined);
+          }
+          return current;
+        });
+      },
+      [],
+    ),
+  });
 
   const [todayLessons, setTodayLessons] = useState<LessonDto[] | null>(null);
   const [allDevices, setAllDevices] = useState<DeviceDto[]>([]);

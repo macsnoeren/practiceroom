@@ -635,6 +635,8 @@ export const SOCKET_EVENTS = {
   micGain: 'mic:gain',
   /** device -> server -> staff: a camera's live microphone level (for testing). */
   micLevel: 'mic:level',
+  /** device -> server -> staff: a recording segment was successfully completed. */
+  recordingCompleted: 'recording:completed',
 } as const;
 
 /** A 0–1 microphone level for the control room's live meter. */
@@ -725,3 +727,12 @@ export const DeviceStatusUpdateSchema = z.object({
   message: z.string().max(300).optional(),
 });
 export type DeviceStatusUpdate = z.infer<typeof DeviceStatusUpdateSchema>;
+
+/** server -> staff: a recording segment finished uploading and was completed. */
+export const RecordingCompletedSchema = z.object({
+  recordingId: z.string(),
+  lessonId: z.string(),
+  deviceId: z.string(),
+  sizeBytes: z.number(),
+});
+export type RecordingCompleted = z.infer<typeof RecordingCompletedSchema>;

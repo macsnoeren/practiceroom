@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { CropRectSchema } from '@practiceroom/shared';
+import { CropRectSchema, SOCKET_EVENTS } from '@practiceroom/shared';
 import { authenticateDevice } from '../auth/device.js';
 import { requireAuth, requireRole } from '../auth/plugin.js';
 import { prisma } from '../db.js';
@@ -121,8 +121,17 @@ export async function recordingRoutes(app: FastifyInstance): Promise<void> {
       },
     });
 
-    // Completing a single segment does not end the lesson; the teacher does
-    // that explicitly via "finish", which also queues the composite worker.
+    // Push to all staff in the school so dashboards update immediately without
+    // needing to poll — the device may take several seconds to finalize.
+    request.server.io
+      .to(`school:${device.schoolId}`)
+      .emit(SOCKET_EVENTS.recordingCompleted, {
+        recordingId: completed.id,
+        lessonId: completed.lessonId,
+        deviceId: completed.deviceId,
+        sizeBytes: completed.sizeBytes,
+      });
+
     return toRecordingDto(completed);
   });
 

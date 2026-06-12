@@ -8,8 +8,10 @@ import {
   MicLevelSchema,
   OnlineDeviceSchema,
   PresenceSnapshotSchema,
+  RecordingCompletedSchema,
   SOCKET_EVENTS,
   type DeviceState,
+  type RecordingCompleted,
 } from '@practiceroom/shared';
 
 /**
@@ -18,13 +20,23 @@ import {
  * also gather the latest preview snapshot per device (only enable where the
  * control room shows them, to avoid needless re-renders elsewhere).
  */
-export function usePresence({ collectFrames = false }: { collectFrames?: boolean } = {}) {
+export function usePresence({
+  collectFrames = false,
+  onRecordingCompleted,
+}: {
+  collectFrames?: boolean;
+  onRecordingCompleted?: (data: RecordingCompleted) => void;
+} = {}) {
   const [online, setOnline] = useState<Set<string>>(new Set());
   const [statuses, setStatuses] = useState<Record<string, DeviceState>>({});
   const [frames, setFrames] = useState<Record<string, string>>({});
   const [gains, setGains] = useState<Record<string, number>>({});
   const [levels, setLevels] = useState<Record<string, number>>({});
   const socketRef = useRef<Socket | null>(null);
+  // Stable ref so the socket handler always calls the latest callback version
+  // without needing to re-register the listener.
+  const onRecordingCompletedRef = useRef(onRecordingCompleted);
+  useEffect(() => { onRecordingCompletedRef.current = onRecordingCompleted; });
 
   useEffect(() => {
     const socket = io({ withCredentials: true });
@@ -59,6 +71,11 @@ export function usePresence({ collectFrames = false }: { collectFrames?: boolean
         setStatuses((prev) => ({ ...prev, [parsed.data.deviceId]: parsed.data.state }));
       }
     });
+    socket.on(SOCKET_EVENTS.recordingCompleted, (raw: unknown) => {
+      const parsed = RecordingCompletedSchema.safeParse(raw);
+      if (parsed.success) onRecordingCompletedRef.current?.(parsed.data);
+    });
+
     if (collectFrames) {
       socket.on(SOCKET_EVENTS.cameraFrame, (raw: unknown) => {
         const parsed = CameraFrameSchema.safeParse(raw);
