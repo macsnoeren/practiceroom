@@ -1,22 +1,24 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import {
+  AuditLogQuerySchema,
   CreateSchoolSchema,
   EnterSchoolSchema,
   SiteAdminSetupSchema,
   UpdateUserSchema,
 } from '@practiceroom/shared';
+import type { Prisma } from '@prisma/client';
 import { prisma } from '../db.js';
 import { cookieSecure } from '../env.js';
 import { hashPassword } from '../auth/password.js';
 import { createSession, setActiveSchool, SESSION_COOKIE } from '../auth/session.js';
 import { requireSuperadmin } from '../auth/plugin.js';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
-import { toGlobalUserDto, toSchoolSummaryDto, toUserDto } from '../lib/dto.js';
+import { toAuditLogDto, toGlobalUserDto, toSchoolSummaryDto, toUserDto } from '../lib/dto.js';
 import { sensitiveRateLimit } from '../lib/rate-limit.js';
 import { audit } from '../lib/audit.js';
 
-function setSessionCookie(reply: FastifyReply, sessionId: string, expiresAt: Date): void {
-  reply.setCookie(SESSION_COOKIE, sessionId, {
+function setSessionCookie(reply: FastifyReply, token: string, expiresAt: Date): void {
+  reply.setCookie(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
     secure: cookieSecure,
@@ -57,7 +59,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       },
     });
     const session = await createSession(admin.id);
-    setSessionCookie(reply, session.id, session.expiresAt);
+    setSessionCookie(reply, session.token, session.expiresAt);
     audit(request, 'siteadmin.setup', { userId: admin.id });
     return reply.code(201).send(toUserDto(admin, null));
   });
@@ -143,6 +145,59 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     });
     audit(request, 'siteadmin.user.update', { userId: id, by: principal.userId });
     return toGlobalUserDto(updated);
+  });
+
+  /* ---- Audit log (site-wide security trail) -------------------------------- */
+
+  // A searchable, paginated view of security-relevant events. Only the site
+  // administrator sees it; it spans every school.
+  app.get('/api/admin/audit-logs', async (request) => {
+    requireSuperadmin(request);
+    const { q, action, schoolId, page, pageSize } = AuditLogQuerySchema.parse(request.query);
+
+    const and: Prisma.AuditLogWhereInput[] = [];
+    if (action) and.push({ action });
+    if (schoolId) and.push({ schoolId });
+    if (q) {
+      // Free-text across the most useful columns (SQLite contains is case-sensitive).
+      and.push({
+        OR: [
+          { action: { contains: q } },
+          { email: { contains: q } },
+          { ip: { contains: q } },
+          { userId: { contains: q } },
+          { detail: { contains: q } },
+        ],
+      });
+    }
+    const where: Prisma.AuditLogWhereInput = and.length ? { AND: and } : {};
+
+    const [total, rows] = await Promise.all([
+      prisma.auditLog.count({ where }),
+      prisma.auditLog.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+    ]);
+
+    // Resolve school names for just this page (audit rows keep only the id).
+    const schoolIds = [...new Set(rows.map((r) => r.schoolId).filter((id): id is string => !!id))];
+    const schools = schoolIds.length
+      ? await prisma.school.findMany({
+          where: { id: { in: schoolIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const nameById = new Map(schools.map((s) => [s.id, s.name]));
+
+    return {
+      items: rows.map((row) => toAuditLogDto(row, row.schoolId ? (nameById.get(row.schoolId) ?? null) : null)),
+      total,
+      page,
+      pageSize,
+    };
   });
 
   app.delete('/api/admin/users/:id', async (request, reply) => {

@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '../src/db.js';
-import { registerSchool, sessionCookie, setupTestApp } from './helpers.js';
+import { login, registerSchool, sessionCookie, setupTestApp } from './helpers.js';
+import { flushAudit } from '../src/lib/audit.js';
 
 let app: FastifyInstance;
 
@@ -116,6 +117,87 @@ describe('site administration (superadmin)', () => {
       headers: { cookie: superCookie },
     });
     assert.equal(leave.json().activeSchoolId, null);
+  });
+
+  it('exposes a searchable, paged audit log to the site admin only', async () => {
+    // The earlier tests (registrations, logins, user edits) already produced
+    // audit events; this login produces one more. Wait for the writes to settle.
+    const superCookie = await login(app, 'site@example.com');
+    const schoolAdmin = await registerSchool(app, 'Audit School', 'audit-admin@example.com');
+    // A failed login records the attempted e-mail, giving us a searchable value.
+    await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email: 'audit-probe@example.com', password: 'wrong-password' },
+    });
+    await flushAudit();
+
+    // Default page: newest first, with a total and pagination metadata.
+    const first = await app.inject({
+      method: 'GET',
+      url: '/api/admin/audit-logs',
+      headers: { cookie: superCookie },
+    });
+    assert.equal(first.statusCode, 200);
+    const body = first.json() as {
+      items: { action: string; email: string | null }[];
+      total: number;
+      page: number;
+      pageSize: number;
+    };
+    assert.equal(body.page, 1);
+    assert.equal(body.pageSize, 50);
+    assert.ok(body.total > 2, 'expected several audit events');
+    assert.ok(body.items.some((e) => e.action === 'auth.login'));
+
+    // Search narrows to matching rows (here: the failed login's e-mail).
+    const searched = await app.inject({
+      method: 'GET',
+      url: '/api/admin/audit-logs?q=audit-probe@example.com',
+      headers: { cookie: superCookie },
+    });
+    assert.equal(searched.statusCode, 200);
+    const hits = searched.json() as { items: { action: string; email: string | null }[]; total: number };
+    assert.ok(hits.total >= 1);
+    assert.ok(hits.items.every((e) => e.email === 'audit-probe@example.com'));
+    assert.ok(hits.items.some((e) => e.action === 'auth.login_failed'));
+
+    // A search with no matches is empty.
+    const none = await app.inject({
+      method: 'GET',
+      url: '/api/admin/audit-logs?q=zzz-no-such-event-zzz',
+      headers: { cookie: superCookie },
+    });
+    assert.equal((none.json() as { total: number }).total, 0);
+
+    // Pagination: a small page size returns at most that many, and page 2 differs.
+    const page1 = await app.inject({
+      method: 'GET',
+      url: '/api/admin/audit-logs?pageSize=2&page=1',
+      headers: { cookie: superCookie },
+    });
+    const page2 = await app.inject({
+      method: 'GET',
+      url: '/api/admin/audit-logs?pageSize=2&page=2',
+      headers: { cookie: superCookie },
+    });
+    const p1 = page1.json() as { items: { id: string }[] };
+    const p2 = page2.json() as { items: { id: string }[] };
+    assert.ok(p1.items.length <= 2 && p1.items.length > 0);
+    const overlap = p1.items.some((a) => p2.items.some((b) => b.id === a.id));
+    assert.equal(overlap, false, 'pages should not overlap');
+
+    // A school admin (non-superadmin) is forbidden.
+    assert.equal(
+      (
+        await app.inject({
+          method: 'GET',
+          url: '/api/admin/audit-logs',
+          headers: { cookie: schoolAdmin.cookie },
+        })
+      ).statusCode,
+      403,
+    );
   });
 
   it('forbids non-superadmins from the admin area', async () => {

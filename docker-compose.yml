@@ -20,7 +20,13 @@ services:
       STORAGE_DIR: /data/storage
       CORS_ORIGIN: ${CORS_ORIGIN}
       SIGNING_SECRET: ${SIGNING_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      # The API is only reachable through the nginx services (one hop), so trust
+      # exactly that hop to read the real client IP from X-Forwarded-For.
+      TRUST_PROXY: ${TRUST_PROXY:-1}
+      # Cap per recording segment / library upload (MB) to bound disk usage.
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-1024}
       FFMPEG_PATH: ''
     volumes:
       - appdata:/data
@@ -34,6 +40,7 @@ services:
       DATABASE_URL: file:/data/app.db
       STORAGE_DIR: /data/storage
       SIGNING_SECRET: ${SIGNING_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       FFMPEG_PATH: ''
     volumes:
       - appdata:/data

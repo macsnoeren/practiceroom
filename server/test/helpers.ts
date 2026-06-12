@@ -18,6 +18,7 @@ export async function setupTestApp(): Promise<FastifyInstance> {
     execSync('npx prisma migrate deploy', { env: process.env, stdio: 'ignore' });
     migrated = true;
   }
+  await prisma.auditLog.deleteMany();
   await prisma.session.deleteMany();
   await prisma.device.deleteMany();
   await prisma.user.deleteMany();

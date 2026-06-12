@@ -3,7 +3,8 @@ import { CropRectSchema } from '@practiceroom/shared';
 import { authenticateDevice } from '../auth/device.js';
 import { requireAuth, requireRole } from '../auth/plugin.js';
 import { prisma } from '../db.js';
-import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
+import { badRequest, conflict, forbidden, notFound, payloadTooLarge } from '../lib/errors.js';
+import { maxUploadBytes } from '../env.js';
 import { canManageLesson, canViewLesson } from '../lib/lesson-access.js';
 import {
   PLAYBACK_TTL_MS,
@@ -58,6 +59,9 @@ export async function recordingRoutes(app: FastifyInstance): Promise<void> {
       return reply
         .code(409)
         .send({ error: 'Chunk niet in volgorde', expected: recording.receivedChunks });
+    }
+    if (recording.sizeBytes + body.length > maxUploadBytes) {
+      throw payloadTooLarge('Opname overschrijdt de maximale grootte');
     }
 
     await appendChunk(id, body);

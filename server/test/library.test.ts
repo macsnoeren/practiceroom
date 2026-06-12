@@ -4,6 +4,7 @@ import { after, before, describe, it } from 'node:test';
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '../src/db.js';
 import { compositePath, ensureCompositeDir } from '../src/lib/storage.js';
+import { maxUploadBytes } from '../src/env.js';
 import { createUser, login, registerSchool, setupTestApp } from './helpers.js';
 
 let app: FastifyInstance;
@@ -164,6 +165,36 @@ describe('video library', () => {
       ).statusCode,
       200,
     );
+  });
+
+  it('rejects an upload chunk that would exceed the size limit', async () => {
+    const admin = await registerSchool(app, 'Lib Cap', 'libcap-admin@example.com');
+    const teacher = await createUser(app, admin.cookie, {
+      name: 'T',
+      email: 'libcap-t@example.com',
+      role: 'teacher',
+    });
+    const teacherCookie = await login(app, teacher.email);
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/library',
+      headers: { cookie: teacherCookie },
+      payload: { title: 'Groot', kind: 'file' },
+    });
+    const itemId = created.json().id as string;
+    // Pretend the file is already at the limit, then push one more byte.
+    await prisma.libraryItem.update({ where: { id: itemId }, data: { sizeBytes: maxUploadBytes } });
+
+    const chunk = await app.inject({
+      method: 'POST',
+      url: `/api/library/${itemId}/chunks?index=0`,
+      headers: { cookie: teacherCookie, 'content-type': 'application/octet-stream' },
+      payload: Buffer.from('X'),
+    });
+    assert.equal(chunk.statusCode, 413);
+    const after = await prisma.libraryItem.findUnique({ where: { id: itemId } });
+    assert.equal(after?.receivedChunks, 0);
   });
 
   it('saves a lesson composite into the library', async () => {

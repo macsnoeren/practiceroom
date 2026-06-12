@@ -1,4 +1,5 @@
 import type {
+  AuditLog,
   CompositeVideo,
   Device,
   Holiday,
@@ -12,6 +13,7 @@ import type {
   User,
 } from '@prisma/client';
 import type {
+  AuditLogDto,
   CompositeStatus,
   CompositeVideoDto,
   DeviceDto,
@@ -70,6 +72,22 @@ export function toSchoolSummaryDto(
 
 export function toGlobalUserDto(user: User & { school?: { name: string } | null }): GlobalUserDto {
   return { ...toUserDto(user), schoolName: user.school?.name ?? null };
+}
+
+/** Map an audit-log row to its DTO, with the school name resolved by the caller
+ * (audit rows store only the id so they survive a school's deletion). */
+export function toAuditLogDto(log: AuditLog, schoolName: string | null = null): AuditLogDto {
+  return {
+    id: log.id,
+    action: log.action,
+    schoolId: log.schoolId,
+    schoolName,
+    userId: log.userId,
+    email: log.email,
+    ip: log.ip,
+    detail: log.detail,
+    createdAt: log.createdAt.toISOString(),
+  };
 }
 
 export function toSchoolDto(school: School): SchoolDto {

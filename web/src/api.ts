@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  AuditLogPageDtoSchema,
   CreateDeviceResultSchema,
   DeviceDtoSchema,
   CompositeVideoDtoSchema,
@@ -143,6 +144,14 @@ export const api = {
       body: JSON.stringify(input),
     }),
   adminDeleteUser: (id: string) => requestVoid(`/api/admin/users/${id}`, { method: 'DELETE' }),
+  adminListAuditLogs: (params: { q?: string; page?: number; pageSize?: number }) => {
+    const search = new URLSearchParams();
+    if (params.q) search.set('q', params.q);
+    if (params.page) search.set('page', String(params.page));
+    if (params.pageSize) search.set('pageSize', String(params.pageSize));
+    const qs = search.toString();
+    return request(`/api/admin/audit-logs${qs ? `?${qs}` : ''}`, AuditLogPageDtoSchema);
+  },
   createUser: (input: CreateUserInput) =>
     request('/api/users', UserDtoSchema, { method: 'POST', body: JSON.stringify(input) }),
   listUsers: () => request('/api/users', z.array(UserDtoSchema)),

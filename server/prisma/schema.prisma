@@ -73,6 +73,10 @@ model User {
   emailVerified Boolean  @default(false)
   totpSecret    String? // TOTP shared secret (set while/after enabling 2FA)
   totpEnabled   Boolean  @default(false)
+  // Brute-force lockout: count of consecutive failed logins, and a time until
+  // which logins are refused once the threshold is hit. Both reset on success.
+  failedLoginCount Int       @default(0)
+  lockedUntil      DateTime?
   createdAt     DateTime @default(now())
 
   school         School?       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
@@ -269,6 +273,25 @@ model LibraryItem {
 
   @@index([schoolId])
   @@index([ownerId])
+}
+
+/// A security-relevant event (login, account/device change, …) for the
+/// site-wide administrator to review. Deliberately has no foreign keys so a
+/// record survives deletion of the user or school it refers to. Searchable
+/// columns are kept alongside a JSON `detail` blob with the full context.
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String // e.g. 'auth.login', 'device.revoke'
+  schoolId  String? // tenant context, when known
+  userId    String? // the acting/affected user, when known
+  email     String? // e.g. the address used in a login attempt
+  ip        String?
+  detail    String? // JSON blob of the event's extra fields
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([action])
+  @@index([schoolId])
 }
 
 /// A server-side login session, referenced by an opaque httpOnly cookie token.

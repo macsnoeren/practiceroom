@@ -6,7 +6,8 @@ import {
 } from '@practiceroom/shared';
 import { prisma } from '../db.js';
 import { requireAuth, requireRole } from '../auth/plugin.js';
-import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
+import { badRequest, conflict, forbidden, notFound, payloadTooLarge } from '../lib/errors.js';
+import { maxUploadBytes } from '../env.js';
 import type { AuthUser } from '../auth/plugin.js';
 import { canViewLesson } from '../lib/lesson-access.js';
 import { toLibraryItemDto } from '../lib/dto.js';
@@ -133,6 +134,9 @@ export async function libraryRoutes(app: FastifyInstance): Promise<void> {
       return reply
         .code(409)
         .send({ error: 'Chunk niet in volgorde', expected: item.receivedChunks });
+    }
+    if (item.sizeBytes + body.length > maxUploadBytes) {
+      throw payloadTooLarge('Bestand overschrijdt de maximale grootte');
     }
 
     await appendLibraryChunk(id, body);

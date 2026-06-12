@@ -14,22 +14,39 @@ import { cookieSecure } from '../env.js';
 import { hashPassword, verifyPassword } from '../auth/password.js';
 import { createSession, deleteSession, SESSION_COOKIE } from '../auth/session.js';
 import { requireAuth } from '../auth/plugin.js';
-import { badRequest, conflict, notFound, unauthorized } from '../lib/errors.js';
+import { badRequest, conflict, notFound, tooManyRequests, unauthorized } from '../lib/errors.js';
+import {
+  clearFailedLogins,
+  isAccountLocked,
+  registerFailedLogin,
+} from '../auth/lockout.js';
 import { toSchoolDto, toUserDto } from '../lib/dto.js';
 import { sensitiveRateLimit } from '../lib/rate-limit.js';
 import { audit } from '../lib/audit.js';
 import { generateTotpSecret, totpKeyUri, verifyTotp } from '../lib/totp.js';
+import { decryptSecret, encryptSecret } from '../lib/crypto.js';
 import { consumeToken, createToken, peekToken } from '../lib/token.js';
 import { sendPasswordResetEmail, sendVerificationEmail } from '../lib/mailer.js';
 
-function setSessionCookie(reply: FastifyReply, sessionId: string, expiresAt: Date): void {
-  reply.setCookie(SESSION_COOKIE, sessionId, {
+function setSessionCookie(reply: FastifyReply, token: string, expiresAt: Date): void {
+  reply.setCookie(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
     secure: cookieSecure,
     path: '/',
     expires: expiresAt,
   });
+}
+
+/** Verify a login/confirmation code against a user's stored (encrypted) TOTP
+ * secret. A missing or undecryptable secret simply fails the check. */
+function verifyUserTotp(storedSecret: string | null, code: string): boolean {
+  if (!storedSecret) return false;
+  try {
+    return verifyTotp(code, decryptSecret(storedSecret));
+  } catch {
+    return false;
+  }
 }
 
 export async function authRoutes(app: FastifyInstance): Promise<void> {
@@ -61,7 +78,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     await sendVerificationEmail(admin.email, admin.name, token);
 
     const session = await createSession(admin.id);
-    setSessionCookie(reply, session.id, session.expiresAt);
+    setSessionCookie(reply, session.token, session.expiresAt);
     audit(request, 'school.register', { schoolId: school.id, userId: admin.id });
     return reply.code(201).send({ user: toUserDto(admin), school: toSchoolDto(school) });
   });
@@ -77,8 +94,18 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       throw unauthorized('Onjuiste inloggegevens');
     }
 
+    // Too many recent failures -> refuse for a while, even with the right
+    // password, to blunt brute-force attempts (incl. distributed ones).
+    if (isAccountLocked(user)) {
+      audit(request, 'auth.login_locked', { userId: user.id });
+      throw tooManyRequests(
+        'Account tijdelijk geblokkeerd na te veel mislukte pogingen. Probeer het later opnieuw.',
+      );
+    }
+
     const ok = await verifyPassword(user.passwordHash, input.password);
     if (!ok) {
+      await registerFailedLogin(user.id);
       audit(request, 'auth.login_failed', { email: input.email });
       throw unauthorized('Onjuiste inloggegevens');
     }
@@ -86,16 +113,20 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     // Second factor (TOTP), if the account has it enabled.
     if (user.totpEnabled) {
       if (!input.code) {
+        // The password was correct; this is not a failed attempt, just a
+        // request for the second factor.
         return reply.code(401).send({ error: 'Tweestapsverificatie vereist', twofa: true });
       }
-      if (!user.totpSecret || !verifyTotp(input.code, user.totpSecret)) {
+      if (!verifyUserTotp(user.totpSecret, input.code)) {
+        await registerFailedLogin(user.id);
         audit(request, 'auth.login_failed', { email: input.email, twofa: true });
         return reply.code(401).send({ error: 'Onjuiste verificatiecode', twofa: true });
       }
     }
 
+    await clearFailedLogins(user.id);
     const session = await createSession(user.id);
-    setSessionCookie(reply, session.id, session.expiresAt);
+    setSessionCookie(reply, session.token, session.expiresAt);
     audit(request, 'auth.login', { userId: user.id });
     return toUserDto(user);
   });
@@ -156,7 +187,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const secret = generateTotpSecret();
     await prisma.user.update({
       where: { id: me.id },
-      data: { totpSecret: secret, totpEnabled: false },
+      data: { totpSecret: encryptSecret(secret), totpEnabled: false },
     });
     return { otpauthUrl: totpKeyUri(user.email, secret), secret };
   });
@@ -167,7 +198,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const { code } = TwoFactorCodeSchema.parse(request.body);
     const user = await prisma.user.findUnique({ where: { id: me.id } });
     if (!user || !user.totpSecret) throw badRequest('Start eerst de instelling van 2FA');
-    if (!verifyTotp(code, user.totpSecret)) throw badRequest('Onjuiste code');
+    if (!verifyUserTotp(user.totpSecret, code)) throw badRequest('Onjuiste code');
 
     await prisma.user.update({ where: { id: me.id }, data: { totpEnabled: true } });
     audit(request, '2fa.enable', { userId: me.id });
@@ -182,7 +213,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     if (!user || !user.totpEnabled || !user.totpSecret) {
       throw badRequest('Tweestapsverificatie staat niet aan');
     }
-    if (!verifyTotp(code, user.totpSecret)) throw badRequest('Onjuiste code');
+    if (!verifyUserTotp(user.totpSecret, code)) throw badRequest('Onjuiste code');
 
     await prisma.user.update({
       where: { id: me.id },
@@ -271,7 +302,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     });
 
     const session = await createSession(user.id);
-    setSessionCookie(reply, session.id, session.expiresAt);
+    setSessionCookie(reply, session.token, session.expiresAt);
     audit(request, 'invite.accept', { userId });
     return toUserDto(user);
   });

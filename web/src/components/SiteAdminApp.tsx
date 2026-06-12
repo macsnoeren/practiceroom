@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import {
   APP_NAME,
   UpdateUserSchema,
+  type AuditLogDto,
+  type AuditLogPageDto,
   type GlobalUserDto,
   type SchoolSummaryDto,
   type UpdateUserInput,
@@ -67,6 +69,7 @@ export function SiteAdminApp({
           </div>
           <SchoolsCard onEnter={onEnter} />
           <UsersCard meId={user.id} />
+          <AuditLogCard />
         </div>
         <SiteFooter />
       </main>
@@ -257,6 +260,142 @@ function UsersCard({ meId }: { meId: string }) {
             }}
           />
         </Modal>
+      )}
+    </div>
+  );
+}
+
+const PAGE_SIZE = 50;
+
+function formatWhen(iso: string): string {
+  return new Date(iso).toLocaleString('nl-NL', { dateStyle: 'short', timeStyle: 'medium' });
+}
+
+/** The site-wide security audit trail: searchable and paged so a table with
+ * thousands of events stays manageable. */
+function AuditLogCard() {
+  const [search, setSearch] = useState('');
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [data, setData] = useState<AuditLogPageDto | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setError(null);
+    api
+      .adminListAuditLogs({ q: query || undefined, page, pageSize: PAGE_SIZE })
+      .then((res) => {
+        if (!cancelled) setData(res);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof ApiError ? err.message : 'Laden mislukt');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [query, page]);
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    setPage(1);
+    setQuery(search.trim());
+  }
+
+  const total = data?.total ?? 0;
+  const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const from = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const to = Math.min(page * PAGE_SIZE, total);
+
+  return (
+    <div className="card">
+      <div className="row">
+        <h2>Auditlog</h2>
+        <form onSubmit={submit} className="inline-form">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Zoek op actie, e-mail, IP…"
+            aria-label="Zoek in auditlog"
+          />
+          <button type="submit">Zoeken</button>
+          {query && (
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => {
+                setSearch('');
+                setQuery('');
+                setPage(1);
+              }}
+            >
+              Wissen
+            </button>
+          )}
+        </form>
+      </div>
+
+      {error && <p className="error">{error}</p>}
+      {!data && !error && <p className="muted">Laden…</p>}
+      {data && data.items.length === 0 && (
+        <p className="muted">{query ? 'Geen resultaten voor deze zoekopdracht.' : 'Nog geen gebeurtenissen.'}</p>
+      )}
+
+      {data && data.items.length > 0 && (
+        <>
+          <table>
+            <thead>
+              <tr>
+                <th>Tijd</th>
+                <th>Actie</th>
+                <th>School</th>
+                <th>E-mail</th>
+                <th>IP</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.items.map((log: AuditLogDto) => (
+                <tr key={log.id}>
+                  <td>{formatWhen(log.createdAt)}</td>
+                  <td>
+                    <span className="tag">{log.action}</span>
+                  </td>
+                  <td>{log.schoolName ?? (log.schoolId ? '—' : '')}</td>
+                  <td>{log.email ?? ''}</td>
+                  <td>{log.ip ?? ''}</td>
+                  <td className="muted">{log.detail ?? ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="row" style={{ marginTop: '0.75rem' }}>
+            <span className="muted">
+              {from}–{to} van {total}
+            </span>
+            <div className="actions">
+              <button
+                type="button"
+                className="secondary"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                Vorige
+              </button>
+              <span className="muted">
+                pagina {page} / {lastPage}
+              </span>
+              <button
+                type="button"
+                className="secondary"
+                disabled={page >= lastPage}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                Volgende
+              </button>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

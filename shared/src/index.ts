@@ -195,6 +195,42 @@ export const GlobalUserDtoSchema = UserDtoSchema.extend({
 });
 export type GlobalUserDto = z.infer<typeof GlobalUserDtoSchema>;
 
+/* ---- Audit log (site-admin) ---------------------------------------------- */
+
+/** One security-relevant event in the site-admin audit trail. */
+export const AuditLogDtoSchema = z.object({
+  id: z.string(),
+  action: z.string(),
+  schoolId: z.string().nullable(),
+  schoolName: z.string().nullable(),
+  userId: z.string().nullable(),
+  email: z.string().nullable(),
+  ip: z.string().nullable(),
+  detail: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type AuditLogDto = z.infer<typeof AuditLogDtoSchema>;
+
+/** Filters for the audit-log list: a free-text search, an optional exact action
+ * or school filter, and 1-based pagination (capped so a huge table stays fast). */
+export const AuditLogQuerySchema = z.object({
+  q: z.string().trim().max(200).optional(),
+  action: z.string().max(100).optional(),
+  schoolId: z.string().max(100).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+});
+export type AuditLogQuery = z.infer<typeof AuditLogQuerySchema>;
+
+/** A page of audit-log entries plus the total count for pagination controls. */
+export const AuditLogPageDtoSchema = z.object({
+  items: z.array(AuditLogDtoSchema),
+  total: z.number(),
+  page: z.number(),
+  pageSize: z.number(),
+});
+export type AuditLogPageDto = z.infer<typeof AuditLogPageDtoSchema>;
+
 /* -------------------------------------------------------------------------- */
 /* Devices (cameras/microphones)                                              */
 /* -------------------------------------------------------------------------- */

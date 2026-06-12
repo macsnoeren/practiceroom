@@ -8,6 +8,7 @@ import { SOCKET_EVENTS } from '@practiceroom/shared';
 import { prisma } from '../src/db.js';
 import { recordingPath } from '../src/lib/storage.js';
 import { signPlayback } from '../src/lib/signing.js';
+import { maxUploadBytes } from '../src/env.js';
 import { createUser, login, registerSchool, setupTestApp } from './helpers.js';
 
 let app: FastifyInstance;
@@ -334,6 +335,24 @@ async function completedRecording(
   });
   return recording.id;
 }
+
+describe('recordings: upload size cap', () => {
+  it('rejects a chunk that would exceed the size limit, writing nothing', async () => {
+    const s = await lessonSetup('cap');
+    const rec = await prisma.recording.create({
+      data: { lessonId: s.lessonId, deviceId: s.device.id, status: 'recording' },
+    });
+    // Pretend the segment is already at the limit, then push one more byte.
+    await prisma.recording.update({ where: { id: rec.id }, data: { sizeBytes: maxUploadBytes } });
+
+    const res = await uploadChunk(rec.id, s.device.token, 0, Buffer.from('X'));
+    assert.equal(res.statusCode, 413);
+
+    // The chunk was not accepted (counter unchanged, nothing appended).
+    const after = await prisma.recording.findUnique({ where: { id: rec.id } });
+    assert.equal(after?.receivedChunks, 0);
+  });
+});
 
 describe('recordings: signed playback', () => {
   it('streams a completed recording to a participant via a signed URL', async () => {

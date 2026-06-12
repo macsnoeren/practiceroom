@@ -185,6 +185,61 @@ describe('self profile', () => {
   });
 });
 
+describe('login lockout', () => {
+  it('locks an account after repeated failures and unlocks after the window', async () => {
+    const admin = await registerSchool(app, 'Lock A', 'lock-admin@example.com');
+    const student = await createUser(app, admin.cookie, {
+      name: 'S',
+      email: 'lock-s@example.com',
+      role: 'student',
+    });
+
+    // Five wrong-password attempts, each a normal 401.
+    for (let i = 0; i < 5; i++) {
+      const r = await app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        payload: { email: student.email, password: 'wrong-password' },
+      });
+      assert.equal(r.statusCode, 401);
+    }
+
+    // Now even the CORRECT password is refused (429), proving it is account-
+    // based and not just throttling the wrong password.
+    const locked = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email: student.email, password: 'supersecret' },
+    });
+    assert.equal(locked.statusCode, 429);
+
+    // Simulate the lock window elapsing.
+    await prisma.user.update({
+      where: { id: student.id },
+      data: { lockedUntil: new Date(Date.now() - 1000) },
+    });
+
+    // A correct login now succeeds and clears the counter...
+    const ok = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email: student.email, password: 'supersecret' },
+    });
+    assert.equal(ok.statusCode, 200);
+
+    // ...so a single fresh failure does not immediately re-lock.
+    const after = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email: student.email, password: 'wrong-password' },
+    });
+    assert.equal(after.statusCode, 401);
+    const fresh = await prisma.user.findUnique({ where: { id: student.id } });
+    assert.equal(fresh?.failedLoginCount, 1);
+    assert.equal(fresh?.lockedUntil, null);
+  });
+});
+
 describe('two-factor authentication', () => {
   it('sets up, enforces it at login, and disables', async () => {
     const admin = await registerSchool(app, '2FA A', 'tfa-admin@example.com');

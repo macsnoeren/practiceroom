@@ -4,7 +4,7 @@ import cookie from '@fastify/cookie';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import { ZodError } from 'zod';
-import { corsOrigins, env } from './env.js';
+import { corsOrigins, env, trustProxy } from './env.js';
 import { HttpError } from './lib/errors.js';
 import { registerAuth } from './auth/plugin.js';
 import { healthRoutes } from './routes/health.js';
@@ -22,10 +22,14 @@ import { setupRealtime } from './realtime/io.js';
 
 /**
  * Builds the Fastify app without starting it, so tests can drive it via
- * `app.inject()` without binding a port.
+ * `app.inject()` without binding a port. `trustProxy` defaults to the env-derived
+ * value; tests override it to exercise the X-Forwarded-For behaviour.
  */
-export async function buildApp() {
+export async function buildApp(
+  options: { trustProxy?: boolean | number | string } = {},
+) {
   const app = Fastify({
+    trustProxy: options.trustProxy ?? trustProxy,
     logger:
       env.NODE_ENV === 'test' ? false : { level: env.NODE_ENV === 'production' ? 'info' : 'debug' },
   });
