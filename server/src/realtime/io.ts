@@ -181,6 +181,18 @@ export function setupRealtime(app: FastifyInstance): void {
     socket.on(SOCKET_EVENTS.statusUpdate, (raw: unknown) => {
       const parsed = DeviceStatusSchema.safeParse(raw);
       if (!parsed.success) return;
+      // When a device reports idle, it is not actively recording. Any segments
+      // still in 'recording' status in the DB are orphaned (crash / missed stop
+      // event) and will never be completed on their own — mark them failed so
+      // they can be deleted and don't block the lesson dashboard.
+      if (parsed.data.state === 'idle') {
+        prisma.recording
+          .updateMany({
+            where: { deviceId: data.deviceId, status: 'recording' },
+            data: { status: 'failed', completedAt: new Date() },
+          })
+          .catch(() => undefined);
+      }
       io.to(schoolRoom(data.schoolId)).emit(SOCKET_EVENTS.deviceStatus, {
         deviceId: data.deviceId,
         state: parsed.data.state,

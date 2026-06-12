@@ -102,6 +102,7 @@ class CameraAgent:
         self._lock = threading.RLock()
         self._preview_proc: subprocess.Popen[bytes] | None = None
         self._session: _CaptureSession | None = None
+        self._recording_id: str | None = None
         self._recording = False
         self._gain = 1.0
         self._last_error: str | None = None
@@ -206,7 +207,19 @@ class CameraAgent:
     def _begin_recording(self, recording_id: str) -> None:
         with self._lock:
             if self._session is not None:
-                return  # already recording
+                if self._recording_id == recording_id:
+                    return  # exact same recording already running
+                # Different recording while one is active: finish the old one
+                # in the background and fall through to start the new one.
+                old_session = self._session
+                self._session = None
+                self._recording = False
+                self._recording_id = None
+                threading.Thread(
+                    target=lambda: old_session.stop_and_finalize(),
+                    name="pr-finalize-prev",
+                    daemon=True,
+                ).start()
             self._stop_preview_process()
             cmd, has_video, has_audio = capture.build_record_command(
                 video_device=self._cfg.video_device,
@@ -226,6 +239,7 @@ class CameraAgent:
                 self._start_preview_process()
                 return
             self._recording = True
+            self._recording_id = recording_id
         if self._connected.is_set():
             self._sio.emit(EV_STATUS_UPDATE, {"state": "recording"})
 
@@ -239,6 +253,7 @@ class CameraAgent:
             session = self._session
             self._session = None
             self._recording = False
+            self._recording_id = None
         if session is not None:
             ok = session.stop_and_finalize()
             if not ok:
@@ -253,6 +268,7 @@ class CameraAgent:
             session = self._session
             self._session = None
             self._recording = False
+            self._recording_id = None
         if session is not None:
             session.kill()
 

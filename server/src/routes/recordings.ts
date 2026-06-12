@@ -142,7 +142,8 @@ export async function recordingRoutes(app: FastifyInstance): Promise<void> {
         throw notFound('Opname niet gevonden');
       }
       if (!canManageLesson(me, recording.lesson)) throw forbidden();
-      if (recording.status === 'recording') throw badRequest('Stop de opname eerst');
+      // Allow deletion of stuck/orphaned 'recording' segments — the device may
+      // be offline and unable to complete them on its own.
 
       await removeFile(recordingPath(id));
       await prisma.recording.delete({ where: { id } });
