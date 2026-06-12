@@ -1,0 +1,26 @@
+# systemd unit for the PracticeRoom Pi camera agent.
+# Install:
+#   sudo cp practiceroom-agent.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now practiceroom-agent
+# Adjust User and the paths below to your setup.
+
+[Unit]
+Description=PracticeRoom camera agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/practiceroom/pi-agent
+# Use the venv's python so dependencies are found.
+ExecStart=/home/pi/practiceroom/pi-agent/.venv/bin/python -m practiceroom_agent
+Environment=PR_AGENT_PORT=8088
+# On a Pi 4/5 the hardware encoder is much lighter; uncomment to use it:
+# Environment=PR_AGENT_VENC=h264_v4l2m2m
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="nl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PracticeRoom — Camera-agent</title>
+    <style>
+      :root {
+        --bg: #0b0c11; --surface: #15171f; --surface-2: #1b1e27;
+        --text: #e7e9ee; --muted: #9aa1ad; --primary: #8b85f5; --accent: #2dd4bf;
+        --danger: #f06b6b; --ok: #4ade80; --radius: 14px;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        background: var(--bg); color: var(--text); line-height: 1.5;
+      }
+      .wrap { max-width: 880px; margin: 0 auto; padding: 1.5rem 1.25rem 4rem; }
+      h1 { font-size: 1.5rem; margin: 0 0 0.25rem; }
+      h2 { font-size: 1.05rem; margin: 0 0 0.75rem; }
+      .lead { color: var(--muted); margin: 0 0 2rem; }
+      .card {
+        background: var(--surface); border: 1px solid rgba(255,255,255,0.06);
+        border-radius: var(--radius); padding: 1.1rem 1.2rem; margin-bottom: 1.1rem;
+      }
+      label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0.6rem 0 0.2rem; }
+      input, select {
+        width: 100%; padding: 0.55rem 0.65rem; border-radius: 9px;
+        border: 1px solid rgba(255,255,255,0.12); background: var(--surface-2);
+        color: var(--text); font-size: 0.95rem;
+      }
+      button {
+        border: 0; border-radius: 9px; padding: 0.55rem 1rem; font-weight: 600;
+        background: var(--primary); color: #fff; cursor: pointer; font-size: 0.95rem;
+      }
+      button.secondary { background: var(--surface-2); color: var(--text);
+        border: 1px solid rgba(255,255,255,0.12); }
+      button.danger { background: transparent; color: var(--danger);
+        border: 1px solid rgba(240,107,107,0.4); }
+      .row { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: end; }
+      .row > * { flex: 1 1 180px; }
+      .row > .grow0 { flex: 0 0 auto; }
+      form { margin: 0; }
+      .src-head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+      .badge { font-size: 0.78rem; padding: 0.2rem 0.55rem; border-radius: 999px;
+        background: var(--surface-2); color: var(--muted); white-space: nowrap; }
+      .badge.ok { color: var(--ok); }
+      .badge.rec { color: var(--danger); }
+      .badge.off { color: var(--muted); }
+      .hr { height: 1px; background: rgba(255,255,255,0.07); margin: 1rem 0; border: 0; }
+      .muted { color: var(--muted); font-size: 0.85rem; }
+      .flash { padding: 0.7rem 0.9rem; border-radius: 10px; margin-bottom: 1rem; }
+      .flash.ok { background: rgba(74,222,128,0.12); color: var(--ok); }
+      .flash.error { background: rgba(240,107,107,0.12); color: var(--danger); }
+      .pill { display: inline-block; font-size: 0.78rem; color: var(--accent); }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>PracticeRoom — Camera-agent</h1>
+      <p class="lead">
+        Maak de camera’s van deze Raspberry Pi beschikbaar voor PracticeRoom.
+        Stel de server in en koppel elke camera met een koppelcode uit het dashboard.
+      </p>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+          <div class="flash {{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endwith %}
+
+      <div class="card">
+        <h2>Server</h2>
+        <form method="post" action="{{ url_for('set_server') }}">
+          <div class="row">
+            <div>
+              <label for="server_url">PracticeRoom server-URL</label>
+              <input id="server_url" name="server_url" placeholder="https://lessen.mijnschool.nl"
+                     value="{{ server_url }}" />
+            </div>
+            <div class="grow0">
+              <button type="submit">Opslaan</button>
+            </div>
+          </div>
+          <p class="muted">Het adres waarop de PracticeRoom-server draait (zonder /api).</p>
+        </form>
+      </div>
+
+      <h2>Camera’s</h2>
+      {% if not sources %}
+        <div class="card"><p class="muted">Geen camera’s gevonden. Sluit een USB-camera aan en ververs.</p></div>
+      {% endif %}
+
+      {% for s in sources %}
+        <div class="card" data-local-id="{{ s.local_id }}">
+          <div class="src-head">
+            <div>
+              <strong>{{ s.label or s.detected_name }}</strong>
+              <div class="muted">{{ s.local_id }}{% if not s.present %} · niet aangesloten{% endif %}</div>
+            </div>
+            <span class="badge js-status">…</span>
+          </div>
+
+          <hr class="hr" />
+
+          <form method="post" action="{{ url_for('configure') }}">
+            <input type="hidden" name="local_id" value="{{ s.local_id }}" />
+            <input type="hidden" name="video_device" value="{{ s.video_device }}" />
+            <div class="row">
+              <div>
+                <label>Naam (optioneel)</label>
+                <input name="label" value="{{ s.label }}" placeholder="{{ s.detected_name }}" />
+              </div>
+              <div>
+                <label>Opnamemodus</label>
+                <select name="mode">
+                  <option value="both" {{ 'selected' if s.mode == 'both' }}>Camera + microfoon</option>
+                  <option value="video" {{ 'selected' if s.mode == 'video' }}>Camera zonder geluid</option>
+                  <option value="audio" {{ 'selected' if s.mode == 'audio' }}>Alleen microfoon</option>
+                </select>
+              </div>
+              <div>
+                <label>Microfoon</label>
+                <select name="audio_device">
+                  <option value="">Geen / standaard</option>
+                  {% for a in audio_devices %}
+                    <option value="{{ a.alsa }}" {{ 'selected' if a.alsa == s.audio_device }}>{{ a.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="grow0">
+                <label>&nbsp;</label>
+                <button type="submit" class="secondary">Instellingen opslaan</button>
+              </div>
+            </div>
+          </form>
+
+          <hr class="hr" />
+
+          {% if s.paired %}
+            <div class="row">
+              <div>
+                <span class="pill">● Gekoppeld</span>
+                <div class="muted">als ‘{{ s.device_name }}’ in PracticeRoom</div>
+              </div>
+              <form method="post" action="{{ url_for('unpair') }}" class="grow0">
+                <input type="hidden" name="local_id" value="{{ s.local_id }}" />
+                <button type="submit" class="danger">Ontkoppelen</button>
+              </form>
+            </div>
+          {% else %}
+            <form method="post" action="{{ url_for('pair') }}">
+              <input type="hidden" name="local_id" value="{{ s.local_id }}" />
+              <div class="row">
+                <div>
+                  <label>Koppelcode uit het dashboard</label>
+                  <input name="pairing_code" placeholder="bijv. K7P2QX" autocomplete="off" />
+                </div>
+                <div class="grow0">
+                  <label>&nbsp;</label>
+                  <button type="submit">Koppelen</button>
+                </div>
+              </div>
+              <p class="muted">Sla eerst de instellingen op, voeg in het dashboard een camera toe en voer hier de code in.</p>
+            </form>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+
+    <script>
+      // Keep the status badges live.
+      async function poll() {
+        try {
+          const res = await fetch('/api/status');
+          const data = await res.json();
+          document.querySelectorAll('[data-local-id]').forEach((card) => {
+            const s = data[card.getAttribute('data-local-id')];
+            const badge = card.querySelector('.js-status');
+            if (!badge) return;
+            if (!s || !s.paired) { badge.textContent = 'Niet gekoppeld'; badge.className = 'badge js-status off'; return; }
+            if (s.recording) { badge.textContent = '● Opname'; badge.className = 'badge js-status rec'; }
+            else if (s.connected) { badge.textContent = '● Online'; badge.className = 'badge js-status ok'; }
+            else { badge.textContent = '○ Offline'; badge.className = 'badge js-status off'; }
+          });
+        } catch (_e) { /* ignore a failed poll */ }
+      }
+      poll();
+      setInterval(poll, 3000);
+    </script>
+  </body>
+</html>
