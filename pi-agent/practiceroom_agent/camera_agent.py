@@ -88,7 +88,13 @@ class CameraAgent:
     def __init__(self, cfg: CameraConfig, server_url: str) -> None:
         self._cfg = cfg
         self._server_url = server_url.rstrip("/")
-        self._sio = socketio.Client(reconnection=True, logger=False, engineio_logger=False)
+        self._sio = socketio.Client(
+            reconnection=True,
+            reconnection_delay=3,
+            reconnection_attempts=0,  # retry forever
+            logger=False,
+            engineio_logger=False,
+        )
         self._thread: threading.Thread | None = None
         self._stopping = threading.Event()
         self._connected = threading.Event()
@@ -144,12 +150,16 @@ class CameraAgent:
                 self._sio.connect(
                     self._server_url,
                     auth={"deviceToken": self._cfg.token},
-                    transports=["websocket"],
                 )
                 self._sio.wait()  # blocks until disconnected and not reconnecting
             except Exception as exc:  # noqa: BLE001 — keep retrying on any failure
-                self._last_error = str(exc)
-                log.warning("[%s] connect failed: %s", self._cfg.local_id, exc)
+                msg = str(exc)
+                # "Connection error" is socket.io's generic auth-rejection message.
+                if "Connection error" in msg:
+                    self._last_error = "Verbinding geweigerd door server (token ongeldig? Koppel opnieuw)"
+                else:
+                    self._last_error = msg
+                log.warning("[%s] connect failed: %s", self._cfg.local_id, self._last_error)
                 self._stopping.wait(5.0)
 
     def _register_handlers(self) -> None:

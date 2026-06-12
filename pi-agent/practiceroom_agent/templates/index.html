@@ -199,7 +199,17 @@
             if (!s || !s.paired) { badge.textContent = 'Niet gekoppeld'; badge.className = 'badge js-status off'; return; }
             if (s.recording) { badge.textContent = '● Opname'; badge.className = 'badge js-status rec'; }
             else if (s.connected) { badge.textContent = '● Online'; badge.className = 'badge js-status ok'; }
-            else { badge.textContent = '○ Offline'; badge.className = 'badge js-status off'; }
+            else {
+              badge.textContent = '○ Offline';
+              badge.className = 'badge js-status off';
+              badge.title = s.error || '';
+              // Show an inline error hint below the badge if there is one.
+              let hint = card.querySelector('.js-conn-error');
+              if (s.error) {
+                if (!hint) { hint = document.createElement('div'); hint.className = 'js-conn-error muted'; hint.style.marginTop='0.3rem'; card.querySelector('.src-head').appendChild(hint); }
+                hint.textContent = '⚠ ' + s.error;
+              } else if (hint) { hint.remove(); }
+            }
           });
         } catch (_e) { /* ignore a failed poll */ }
       }
