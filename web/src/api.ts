@@ -275,7 +275,7 @@ export const api = {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'content-type': 'application/octet-stream' },
-        body: blob,
+        body: await blob.arrayBuffer(),
       });
       if (!res.ok) throw new ApiError(res.status, 'Upload mislukt');
       index += 1;
@@ -333,7 +333,7 @@ export const api = {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'content-type': 'application/octet-stream' },
-        body: blob,
+        body: await blob.arrayBuffer(),
       });
       if (!res.ok) throw new ApiError(res.status, 'Upload mislukt');
       index += 1;

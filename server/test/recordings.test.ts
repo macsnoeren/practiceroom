@@ -336,6 +336,24 @@ async function completedRecording(
   return recording.id;
 }
 
+describe('recordings: tolerant content-type', () => {
+  it('accepts a chunk sent with a media content-type (Safari Blob body)', async () => {
+    const s = await lessonSetup('ctype');
+    const rec = await prisma.recording.create({
+      data: { lessonId: s.lessonId, deviceId: s.device.id, status: 'recording' },
+    });
+    // iOS Safari may label a Blob upload body video/mp4 instead of octet-stream.
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/recordings/${rec.id}/chunks?index=0`,
+      headers: { authorization: `Bearer ${s.device.token}`, 'content-type': 'video/mp4' },
+      payload: Buffer.from('MP4-BYTES'),
+    });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().received, 1);
+  });
+});
+
 describe('recordings: upload size cap', () => {
   it('rejects a chunk that would exceed the size limit, writing nothing', async () => {
     const s = await lessonSetup('cap');

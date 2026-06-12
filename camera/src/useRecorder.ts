@@ -74,7 +74,7 @@ export function useRecorder(
       const crop = hasVideo ? cropRef.current : null;
       void uploader
         .finish(actualType, { hasVideo, hasAudio, crop })
-        .then(() => setState('idle'));
+        .then(() => setState(uploader.hasFailed ? 'error' : 'idle'));
     };
 
     recorder.start(2000); // emit a chunk every 2 seconds

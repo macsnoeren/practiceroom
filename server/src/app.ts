@@ -49,11 +49,13 @@ export async function buildApp(
   await registerAuth(app);
 
   // Raw binary parser for recording chunk uploads (larger than the JSON limit).
-  app.addContentTypeParser(
-    'application/octet-stream',
-    { parseAs: 'buffer', bodyLimit: 25 * 1024 * 1024 },
-    (_req, body, done) => done(null, body),
-  );
+  const bufferParserOpts = { parseAs: 'buffer', bodyLimit: 25 * 1024 * 1024 } as const;
+  const toBuffer = (_req: unknown, body: Buffer, done: (err: Error | null, body: Buffer) => void) =>
+    done(null, body);
+  app.addContentTypeParser('application/octet-stream', bufferParserOpts, toBuffer);
+  // Also accept the media types a browser may put on a Blob upload body (iOS
+  // Safari in particular), so a chunk is never rejected on its content-type.
+  app.addContentTypeParser(/^(video|audio)\//, bufferParserOpts, toBuffer);
 
   // Single place to turn errors into clean JSON responses.
   app.setErrorHandler((error: FastifyError, request, reply) => {
