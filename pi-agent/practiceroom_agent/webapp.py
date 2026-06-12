@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 
-from flask import Flask, flash, jsonify, redirect, render_template, request, url_for
+from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
 
 from .supervisor import PairError, Supervisor
 
@@ -20,17 +20,29 @@ def create_app(supervisor: Supervisor) -> Flask:
 
     @app.get("/")
     def index() -> str:
+        conn_result = session.pop("conn_result", None)
         return render_template(
             "index.html",
             server_url=supervisor.server_url,
             sources=supervisor.list_sources(),
             audio_devices=supervisor.list_audio_devices(),
+            conn_result=conn_result,
         )
 
     @app.post("/server")
     def set_server():  # type: ignore[no-untyped-def]
-        supervisor.set_server_url(request.form.get("server_url", ""))
+        url = request.form.get("server_url", "")
+        supervisor.set_server_url(url)
+        result = supervisor.test_connection()
+        session["conn_result"] = result
         flash("Server-URL opgeslagen.", "ok")
+        return redirect(url_for("index"))
+
+    @app.post("/server/test")
+    def test_server():  # type: ignore[no-untyped-def]
+        url = request.form.get("server_url", "") or supervisor.server_url
+        result = supervisor.test_connection(url)
+        session["conn_result"] = result
         return redirect(url_for("index"))
 
     @app.post("/camera/config")

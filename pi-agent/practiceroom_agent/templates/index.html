@@ -53,6 +53,9 @@
       .flash.ok { background: rgba(74,222,128,0.12); color: var(--ok); }
       .flash.error { background: rgba(240,107,107,0.12); color: var(--danger); }
       .pill { display: inline-block; font-size: 0.78rem; color: var(--accent); }
+      .conn-result { margin-top: 0.75rem; padding: 0.55rem 0.8rem; border-radius: 9px; font-size: 0.9rem; }
+      .conn-result.ok { background: rgba(74,222,128,0.12); color: var(--ok); }
+      .conn-result.error { background: rgba(240,107,107,0.12); color: var(--danger); }
     </style>
   </head>
   <body>
@@ -71,19 +74,28 @@
 
       <div class="card">
         <h2>Server</h2>
-        <form method="post" action="{{ url_for('set_server') }}">
+        <form method="post" action="{{ url_for('set_server') }}" id="server-form">
           <div class="row">
             <div>
               <label for="server_url">PracticeRoom server-URL</label>
               <input id="server_url" name="server_url" placeholder="https://lessen.mijnschool.nl"
                      value="{{ server_url }}" />
             </div>
-            <div class="grow0">
+            <div class="grow0" style="display:flex;gap:0.5rem;align-items:flex-end">
               <button type="submit">Opslaan</button>
+              <button type="submit" form="test-form" class="secondary">Verbinding testen</button>
             </div>
           </div>
           <p class="muted">Het adres waarop de PracticeRoom-server draait (zonder /api).</p>
         </form>
+        <form method="post" action="{{ url_for('test_server') }}" id="test-form" style="display:none">
+          <input type="hidden" name="server_url" id="test-url" value="{{ server_url }}" />
+        </form>
+        {% if conn_result %}
+          <div class="conn-result {{ 'ok' if conn_result.ok else 'error' }}">
+            {{ '✓' if conn_result.ok else '✗' }} {{ conn_result.message }}
+          </div>
+        {% endif %}
       </div>
 
       <h2>Camera’s</h2>
@@ -168,6 +180,12 @@
       {% endfor %}
     </div>
 
+    <script>
+      // Keep the hidden test-form URL in sync with what the user types.
+      document.getElementById('server_url').addEventListener('input', function () {
+        document.getElementById('test-url').value = this.value;
+      });
+    </script>
     <script>
       // Keep the status badges live.
       async function poll() {

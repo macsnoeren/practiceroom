@@ -147,6 +147,7 @@ export function Regiekamer({ user }: { user: UserDto }) {
     try {
       const lesson = await api.createLesson({
         title,
+        teacherId: user.id,
         studentId: user.id,
         startsAt: new Date().toISOString(),
         durationMinutes: 60,

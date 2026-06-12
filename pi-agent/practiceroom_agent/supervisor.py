@@ -55,6 +55,28 @@ class Supervisor:
     def server_url(self) -> str:
         return self._store.server_url
 
+    def test_connection(self, url: str | None = None) -> dict[str, object]:
+        """Try GET /api/health on *url* (or the stored URL). Returns a dict with
+        ``ok`` (bool), ``message`` (str) and optionally ``app`` / ``time``."""
+        target = (url or self._store.server_url).strip().rstrip("/")
+        if not target:
+            return {"ok": False, "message": "Geen server-URL ingesteld."}
+        try:
+            res = requests.get(f"{target}/api/health", timeout=5)
+        except requests.exceptions.ConnectionError:
+            return {"ok": False, "message": f"Geen verbinding met {target}. Controleer het adres en of de server draait."}
+        except requests.exceptions.Timeout:
+            return {"ok": False, "message": f"Time-out bij verbinden met {target}."}
+        except requests.RequestException as exc:
+            return {"ok": False, "message": str(exc)}
+        if not res.ok:
+            return {"ok": False, "message": f"Server antwoordde met HTTP {res.status_code}."}
+        try:
+            data = res.json()
+            return {"ok": True, "message": f"Verbonden — {data.get('app', 'PracticeRoom')} · {data.get('time', '')}"}
+        except ValueError:
+            return {"ok": True, "message": "Verbonden (geen JSON in antwoord)."}
+
     # -- camera configuration ------------------------------------------------
 
     def configure_camera(
