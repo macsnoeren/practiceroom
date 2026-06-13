@@ -133,12 +133,13 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       if (taken) throw conflict('E-mailadres is al in gebruik');
     }
 
+    // Role is per-school (Membership); the site admin changes it by entering the
+    // school. Here only the global account fields are editable.
     const updated = await prisma.user.update({
       where: { id },
       data: {
         name: input.name,
         email: input.email,
-        role: input.role,
         ...(input.password ? { passwordHash: await hashPassword(input.password) } : {}),
       },
       include: { school: { select: { name: true } } },

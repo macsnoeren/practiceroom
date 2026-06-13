@@ -27,10 +27,23 @@ export async function getSessionUser(token: string): Promise<User | null> {
   return (await getSessionContext(token))?.user ?? null;
 }
 
-/** Like getSessionUser, but also exposes the superadmin's entered school. */
-export async function getSessionContext(
-  token: string,
-): Promise<{ user: User; activeSchoolId: string | null } | null> {
+/**
+ * The fully resolved session: the raw user, the superadmin's entered school, and
+ * the EFFECTIVE school + role for this request. The effective values drive all
+ * tenant-scoped access:
+ *  - a superadmin acts as 'admin' of the school they have entered (if any);
+ *  - any other user acts in the membership for their active school, or — when no
+ *    active school is set or it is no longer valid — their first membership.
+ * `effectiveSchoolId`/`effectiveRole` are null when the user has no school yet.
+ */
+export interface SessionContext {
+  user: User;
+  activeSchoolId: string | null;
+  effectiveSchoolId: string | null;
+  effectiveRole: 'admin' | 'teacher' | 'student' | null;
+}
+
+export async function getSessionContext(token: string): Promise<SessionContext | null> {
   const session = await prisma.session.findUnique({
     where: { id: hashToken(token) },
     include: { user: true },
@@ -40,7 +53,35 @@ export async function getSessionContext(
     await deleteSession(token);
     return null;
   }
-  return { user: session.user, activeSchoolId: session.activeSchoolId };
+
+  const { user, activeSchoolId } = session;
+
+  if (user.role === 'superadmin') {
+    // Acts as admin of the school they have entered, or has no school context.
+    return {
+      user,
+      activeSchoolId,
+      effectiveSchoolId: activeSchoolId,
+      effectiveRole: activeSchoolId ? 'admin' : null,
+    };
+  }
+
+  // Members: the active school's membership, else the oldest membership.
+  const memberships = await prisma.membership.findMany({
+    where: { userId: user.id },
+    orderBy: { createdAt: 'asc' },
+  });
+  const active =
+    (activeSchoolId ? memberships.find((m) => m.schoolId === activeSchoolId) : undefined) ??
+    memberships[0] ??
+    null;
+
+  return {
+    user,
+    activeSchoolId,
+    effectiveSchoolId: active?.schoolId ?? null,
+    effectiveRole: (active?.role as SessionContext['effectiveRole']) ?? null,
+  };
 }
 
 /** Set (or clear) the school a superadmin session is currently acting within. */

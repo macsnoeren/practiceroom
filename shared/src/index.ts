@@ -175,6 +175,18 @@ export type SiteAdminSetupInput = z.infer<typeof SiteAdminSetupSchema>;
 export const EnterSchoolSchema = z.object({ schoolId: z.string().min(1) });
 export type EnterSchoolInput = z.infer<typeof EnterSchoolSchema>;
 
+/** One of the schools the logged-in user is a member of, with their role there. */
+export const MySchoolDtoSchema = z.object({
+  schoolId: z.string(),
+  name: z.string(),
+  role: RoleSchema,
+});
+export type MySchoolDto = z.infer<typeof MySchoolDtoSchema>;
+
+/** A member switches the school their session is currently acting within. */
+export const SwitchSchoolSchema = z.object({ schoolId: z.string().min(1) });
+export type SwitchSchoolInput = z.infer<typeof SwitchSchoolSchema>;
+
 /** The site admin creates a new (empty) school. */
 export const CreateSchoolSchema = z.object({ name: nameField });
 export type CreateSchoolInput = z.infer<typeof CreateSchoolSchema>;

@@ -25,13 +25,14 @@ model School {
   outroMimeType  String?
   outroSizeBytes Int     @default(0)
 
-  users    User[]
-  devices  Device[]
-  lessons  Lesson[]
-  holidays Holiday[]
-  rooms    Room[]
-  library  LibraryItem[]
-  sources  ComposedSource[]
+  users       User[]
+  memberships Membership[]
+  devices     Device[]
+  lessons     Lesson[]
+  holidays    Holiday[]
+  rooms       Room[]
+  library     LibraryItem[]
+  sources     ComposedSource[]
 }
 
 /// A physical room/location where lessons take place. School-scoped.
@@ -101,14 +102,16 @@ model Holiday {
   @@index([schoolId])
 }
 
-/// A person within a school. Role is stored as a string because SQLite has no
-/// native enums; it is validated against the shared `Role` contract in code.
+/// A person. Access to a school and the role there live in `Membership` (a user
+/// can belong to several schools). `schoolId`/`role` here are legacy: `role` is
+/// only authoritative for a site-wide 'superadmin' (who has no membership);
+/// `schoolId` is kept as the user's home school for display/compat.
 model User {
   id           String   @id @default(cuid())
-  schoolId     String? // null for a site-wide superadmin (belongs to no school)
+  schoolId     String? // home school (legacy); null for a site-wide superadmin
   email        String   @unique // globally unique so login needs only email + password
   name         String
-  role         String // 'admin' | 'teacher' | 'student' | 'superadmin'
+  role         String // 'superadmin' (global); for members the role lives on Membership
   passwordHash  String
   emailVerified Boolean  @default(false)
   totpSecret    String? // TOTP shared secret (set while/after enabling 2FA)
@@ -120,12 +123,30 @@ model User {
   createdAt     DateTime @default(now())
 
   school         School?       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  memberships    Membership[]
   sessions       Session[]
   tokens         Token[]
   teacherLessons Lesson[]      @relation("TeacherLessons")
   studentLessons Lesson[]      @relation("StudentLessons")
   library        LibraryItem[]
 
+  @@index([schoolId])
+}
+
+/// A user's membership of a school, with the role they hold there. One person
+/// (one account/login) can be a member of several schools, with a different role
+/// in each.
+model Membership {
+  id        String   @id @default(cuid())
+  userId    String
+  schoolId  String
+  role      String // 'admin' | 'teacher' | 'student'
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, schoolId])
   @@index([schoolId])
 }
 

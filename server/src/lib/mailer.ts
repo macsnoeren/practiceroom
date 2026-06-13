@@ -106,6 +106,29 @@ export async function sendInviteEmail(to: string, name: string, token: string): 
   });
 }
 
+/** Tells an existing account holder they were added to another school. They use
+ * their existing login; no action is required. */
+export async function sendAddedToSchoolEmail(
+  to: string,
+  name: string,
+  schoolName: string,
+): Promise<void> {
+  const url = appUrl;
+  await sendMail({
+    to,
+    subject: `Je bent toegevoegd aan ${schoolName} — PracticeRoom`,
+    text: `Hallo ${name},\n\nJe bent toegevoegd aan ${schoolName} in PracticeRoom. Log in met je bestaande account; bovenin kun je tussen je scholen wisselen.\n${url}`,
+    html: layout(
+      'Toegevoegd aan een school',
+      [
+        `Hallo ${name},`,
+        `Je bent toegevoegd aan <strong>${schoolName}</strong>. Log in met je bestaande account; bovenin de app kun je tussen je scholen wisselen.`,
+      ],
+      { label: 'Naar PracticeRoom', url },
+    ),
+  });
+}
+
 export async function sendPasswordResetEmail(
   to: string,
   name: string,

@@ -5,16 +5,25 @@ import {
   LoginSchema,
   RegisterSchoolSchema,
   ResetPasswordSchema,
+  SwitchSchoolSchema,
   TokenSchema,
   TwoFactorCodeSchema,
   UpdateProfileSchema,
+  type UserRole,
 } from '@practiceroom/shared';
+import type { User } from '@prisma/client';
 import { prisma } from '../db.js';
 import { cookieSecure } from '../env.js';
 import { hashPassword, verifyPassword } from '../auth/password.js';
-import { createSession, deleteSession, SESSION_COOKIE } from '../auth/session.js';
+import {
+  createSession,
+  deleteSession,
+  getSessionContext,
+  setActiveSchool,
+  SESSION_COOKIE,
+} from '../auth/session.js';
 import { requireAuth } from '../auth/plugin.js';
-import { badRequest, conflict, notFound, tooManyRequests, unauthorized } from '../lib/errors.js';
+import { badRequest, conflict, forbidden, notFound, tooManyRequests, unauthorized } from '../lib/errors.js';
 import {
   clearFailedLogins,
   isAccountLocked,
@@ -49,6 +58,16 @@ function verifyUserTotp(storedSecret: string | null, code: string): boolean {
   }
 }
 
+/** Build the user DTO with the school + role resolved from their session (active
+ * membership, or the superadmin's entered school). */
+async function userDtoFromSession(token: string, user: User) {
+  const ctx = await getSessionContext(token);
+  return toUserDto(user, ctx?.activeSchoolId ?? null, {
+    schoolId: ctx?.effectiveSchoolId ?? undefined,
+    role: (ctx?.effectiveRole ?? undefined) as UserRole | undefined,
+  });
+}
+
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   // Bootstrap a school + its first admin. Open by design for a self-hosted
   // install; tighten or disable once the school exists (see Phase 8).
@@ -68,6 +87,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
           name: input.adminName,
           role: 'admin',
           passwordHash,
+          memberships: { create: { schoolId: school.id, role: 'admin' } },
         },
       });
       return { school, admin };
@@ -128,7 +148,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const session = await createSession(user.id);
     setSessionCookie(reply, session.token, session.expiresAt);
     audit(request, 'auth.login', { userId: user.id });
-    return toUserDto(user);
+    return userDtoFromSession(session.token, user);
   });
 
   app.post('/api/auth/logout', async (request, reply) => {
@@ -144,7 +164,37 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     if (!principal) throw unauthorized();
     const user = await prisma.user.findUnique({ where: { id: principal.userId } });
     if (!user) throw unauthorized();
-    return toUserDto(user, principal.activeSchoolId);
+    const token = request.cookies[SESSION_COOKIE];
+    return token ? userDtoFromSession(token, user) : toUserDto(user, principal.activeSchoolId);
+  });
+
+  // The schools the logged-in user is a member of (for the school switcher).
+  app.get('/api/auth/schools', async (request) => {
+    const principal = request.principal;
+    if (!principal) throw unauthorized();
+    const memberships = await prisma.membership.findMany({
+      where: { userId: principal.userId },
+      orderBy: { createdAt: 'asc' },
+      include: { school: { select: { name: true } } },
+    });
+    return memberships.map((m) => ({ schoolId: m.schoolId, name: m.school.name, role: m.role }));
+  });
+
+  // Switch the active school for this session (member of several schools).
+  app.post('/api/auth/switch-school', async (request) => {
+    const principal = request.principal;
+    if (!principal) throw unauthorized();
+    const { schoolId } = SwitchSchoolSchema.parse(request.body);
+    const membership = await prisma.membership.findUnique({
+      where: { userId_schoolId: { userId: principal.userId, schoolId } },
+    });
+    if (!membership) throw forbidden('Je bent geen lid van deze school');
+
+    const token = request.cookies[SESSION_COOKIE];
+    if (!token) throw badRequest('Geen sessie');
+    await setActiveSchool(token, schoolId);
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: principal.userId } });
+    return toUserDto(user, null, { schoolId, role: membership.role as UserRole });
   });
 
   // A user updates their own profile (name, email, password).
@@ -172,7 +222,8 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       data: { name: input.name, email: input.email, ...(passwordHash ? { passwordHash } : {}) },
     });
     audit(request, 'profile.update', { userId: me.id });
-    return toUserDto(updated);
+    const token = request.cookies[SESSION_COOKIE];
+    return token ? userDtoFromSession(token, updated) : toUserDto(updated);
   });
 
   /* ---- Two-factor authentication (TOTP) ------------------------------------ */
@@ -304,6 +355,6 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const session = await createSession(user.id);
     setSessionCookie(reply, session.token, session.expiresAt);
     audit(request, 'invite.accept', { userId });
-    return toUserDto(user);
+    return userDtoFromSession(session.token, user);
   });
 }

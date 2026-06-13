@@ -11,6 +11,7 @@ import {
   LessonTagDtoSchema,
   LibraryItemDtoSchema,
   MaterialDtoSchema,
+  MySchoolDtoSchema,
   SchoolSettingsDtoSchema,
   SchoolSummaryDtoSchema,
   GlobalUserDtoSchema,
@@ -141,6 +142,13 @@ export const api = {
       body: JSON.stringify({ schoolId }),
     }),
   leaveSchool: () => request('/api/admin/leave', UserDtoSchema, { method: 'POST' }),
+  // Schools the logged-in user belongs to, and switching the active one.
+  mySchools: () => request('/api/auth/schools', z.array(MySchoolDtoSchema)),
+  switchSchool: (schoolId: string) =>
+    request('/api/auth/switch-school', UserDtoSchema, {
+      method: 'POST',
+      body: JSON.stringify({ schoolId }),
+    }),
   adminListUsers: () => request('/api/admin/users', z.array(GlobalUserDtoSchema)),
   adminUpdateUser: (id: string, input: UpdateUserInput) =>
     request(`/api/admin/users/${id}`, GlobalUserDtoSchema, {

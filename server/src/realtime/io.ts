@@ -113,16 +113,15 @@ export function setupRealtime(app: FastifyInstance): void {
       if (sessionId) {
         const ctx = await getSessionContext(sessionId);
         if (ctx) {
-          const { user, activeSchoolId } = ctx;
-          // A superadmin's school context is the school they have entered; a
-          // normal user's is their own. No school context = no realtime access.
-          const schoolId = user.role === 'superadmin' ? activeSchoolId : user.schoolId;
-          if (schoolId) {
+          const { user, effectiveSchoolId, effectiveRole } = ctx;
+          // The effective school + role come from the resolved membership (or the
+          // superadmin's entered school). No school context = no realtime access.
+          if (effectiveSchoolId && effectiveRole) {
             socket.data = {
               kind: 'user',
               userId: user.id,
-              schoolId,
-              role: (user.role === 'superadmin' ? 'admin' : user.role) as Role,
+              schoolId: effectiveSchoolId,
+              role: effectiveRole as Role,
             } satisfies SocketData;
             return next();
           }

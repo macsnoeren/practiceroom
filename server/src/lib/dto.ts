@@ -47,14 +47,21 @@ function toDateOnly(date: Date): string {
 }
 
 /** Map a database user to the client-facing DTO. Never leaks the password hash.
- * `activeSchoolId` is only meaningful for a superadmin (the school they entered). */
-export function toUserDto(user: User, activeSchoolId: string | null = null): UserDto {
+ * `activeSchoolId` is only meaningful for a superadmin (the school they entered).
+ * `override` supplies the school + role from the user's membership in the current
+ * school context (a user can belong to several schools, each with its own role);
+ * without it the user's own (legacy) `schoolId`/`role` are used. */
+export function toUserDto(
+  user: User,
+  activeSchoolId: string | null = null,
+  override: { schoolId?: string | null; role?: UserRole } = {},
+): UserDto {
   return {
     id: user.id,
-    schoolId: user.schoolId,
+    schoolId: override.schoolId !== undefined ? override.schoolId : user.schoolId,
     email: user.email,
     name: user.name,
-    role: user.role as UserRole,
+    role: override.role ?? (user.role as UserRole),
     emailVerified: user.emailVerified,
     totpEnabled: user.totpEnabled,
     activeSchoolId,

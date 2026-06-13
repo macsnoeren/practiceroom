@@ -1,6 +1,6 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
-import { APP_NAME, type UserDto } from '@practiceroom/shared';
+import { APP_NAME, type MySchoolDto, type UserDto } from '@practiceroom/shared';
 import { ApiError, api } from '../api.js';
 import { useTheme } from '../useTheme.js';
 import { LessonManagement } from './LessonManagement.js';
@@ -27,6 +27,50 @@ const ROLE_LABEL: Record<UserDto['role'], string> = {
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
   isActive ? 'nav-link active' : 'nav-link';
+
+/** A dropdown to switch the active school, shown only when the user belongs to
+ * more than one. Switching reloads so every school-scoped screen refetches. */
+function SchoolSwitcher({ currentSchoolId }: { currentSchoolId: string | null }) {
+  const [schools, setSchools] = useState<MySchoolDto[] | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api
+      .mySchools()
+      .then(setSchools)
+      .catch(() => setSchools([]));
+  }, []);
+
+  if (!schools || schools.length < 2) return null;
+
+  async function switchTo(schoolId: string) {
+    if (!schoolId || schoolId === currentSchoolId) return;
+    setBusy(true);
+    try {
+      await api.switchSchool(schoolId);
+      window.location.reload();
+    } catch {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <select
+      className="school-switcher"
+      value={currentSchoolId ?? ''}
+      disabled={busy}
+      onChange={(e) => void switchTo(e.target.value)}
+      aria-label="Actieve school"
+      title="Wissel van school"
+    >
+      {schools.map((s) => (
+        <option key={s.schoolId} value={s.schoolId}>
+          {s.name}
+        </option>
+      ))}
+    </select>
+  );
+}
 
 export function AppShell({
   user,
@@ -62,6 +106,7 @@ export function AppShell({
           >
             {theme === 'dark' ? '☀️' : '🌙'}
           </button>
+          {!isSuperadmin && <SchoolSwitcher currentSchoolId={user.schoolId} />}
           <Link to="/profile" className="who" title="Mijn profiel">
             <strong>{user.name}</strong>
             <small>{ROLE_LABEL[user.role]}</small>

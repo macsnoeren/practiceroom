@@ -45,7 +45,7 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
     if (!token) return;
     const ctx = await getSessionContext(token);
     if (!ctx) return;
-    const { user, activeSchoolId } = ctx;
+    const { user, activeSchoolId, effectiveSchoolId, effectiveRole } = ctx;
 
     request.principal = {
       userId: user.id,
@@ -56,25 +56,15 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
       activeSchoolId,
     };
 
-    if (user.role === 'superadmin') {
-      // A superadmin only has a school context once they have entered one;
-      // there they act as the school's admin.
-      if (activeSchoolId) {
-        request.authUser = {
-          id: user.id,
-          schoolId: activeSchoolId,
-          email: user.email,
-          name: user.name,
-          role: 'admin',
-        };
-      }
-    } else if (user.schoolId) {
+    // The effective school + role come from the resolved membership (or the
+    // superadmin's entered school). No school context = no authUser.
+    if (effectiveSchoolId && effectiveRole) {
       request.authUser = {
         id: user.id,
-        schoolId: user.schoolId,
+        schoolId: effectiveSchoolId,
         email: user.email,
         name: user.name,
-        role: user.role as Role,
+        role: effectiveRole as Role,
       };
     }
   });

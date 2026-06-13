@@ -125,10 +125,15 @@ function pipOverlayXY(position: PipInput['position']): string {
 /**
  * ffmpeg args that composite one main camera (full frame) with picture-in-
  * picture insets in the corners, optionally laying a separate audio source's
- * sound under it. The main camera is scaled/padded to the composite frame; each
- * inset is scaled to a fraction of the width and overlaid. `-shortest` aligns
- * the (jointly started) inputs. Output is Matroska (h264/opus); the concat step
- * re-encodes it like any other segment.
+ * sound under it.
+ *
+ * Sync is the tricky part: the cameras are recorded independently as variable
+ * frame-rate streams with their own timestamps. So EVERY layer (the base, each
+ * inset, and the audio) is first reset to a common zero start (`setpts`) and the
+ * video is forced to one constant frame rate (`fps`). Without this the insets
+ * keep their raw VFR timestamps while the base is resampled, so an inset drifts
+ * progressively ahead of the base and the audio. Output is Matroska (h264/opus);
+ * the concat step re-encodes it like any other segment.
  */
 export function buildPipCompositeArgs(
   mainInput: string,
@@ -140,21 +145,34 @@ export function buildPipCompositeArgs(
   for (const pip of pips) args.push('-i', pip.input);
   if (audioInput) args.push('-i', audioInput);
 
-  const filters: string[] = [`[0:v]${SCALE_PAD}[base]`];
+  // Reset the base to a zero start before scaling/padding to the constant-fps frame.
+  const filters: string[] = [`[0:v]setpts=PTS-STARTPTS,${SCALE_PAD}[base]`];
   let last = 'base';
   pips.forEach((pip, i) => {
     const inputIdx = i + 1; // main is input 0
     const width = Math.max(2, Math.round(COMPOSITE_WIDTH * pip.scale));
-    filters.push(`[${inputIdx}:v]scale=${width}:-2,setsar=1[p${i}]`);
+    // Same temporal normalisation as the base (zero start + constant fps) so the
+    // inset stays locked to the base instead of drifting ahead.
+    filters.push(
+      `[${inputIdx}:v]setpts=PTS-STARTPTS,scale=${width}:-2,setsar=1,fps=${COMPOSITE_FPS}[p${i}]`,
+    );
     const outLabel = i === pips.length - 1 ? 'v' : `t${i}`;
     filters.push(`[${last}][p${i}]overlay=${pipOverlayXY(pip.position)}:shortest=1[${outLabel}]`);
     last = outLabel;
   });
   const videoLabel = pips.length > 0 ? 'v' : 'base';
 
-  // Audio: the dedicated audio source (its own input) if present, otherwise the
-  // main camera's own track (optional — '?' tolerates a silent camera).
-  const audioMap = audioInput ? `${pips.length + 1}:a:0?` : '0:a:0?';
+  // Audio: the dedicated audio source if present — reset to a zero start (and
+  // resample to fill gaps) so it shares the video layers' clock. Without an audio
+  // source, fall back to the main camera's own track via an optional raw map
+  // (the '?' tolerates a silent camera, which a filter could not).
+  let audioMap: string;
+  if (audioInput) {
+    filters.push(`[${pips.length + 1}:a]aresample=async=1:first_pts=0,asetpts=PTS-STARTPTS[a]`);
+    audioMap = '[a]';
+  } else {
+    audioMap = '0:a:0?';
+  }
 
   args.push(
     '-filter_complex',
