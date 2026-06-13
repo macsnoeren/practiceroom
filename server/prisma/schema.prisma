@@ -31,6 +31,7 @@ model School {
   holidays Holiday[]
   rooms    Room[]
   library  LibraryItem[]
+  sources  ComposedSource[]
 }
 
 /// A physical room/location where lessons take place. School-scoped.
@@ -42,8 +43,47 @@ model Room {
 
   school  School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   lessons Lesson[]
+  devices Device[]
+  sources ComposedSource[]
 
   @@index([schoolId])
+}
+
+/// A virtual "source" that overlays several of a room's cameras into one frame:
+/// one main camera full-frame plus picture-in-picture insets in the corners
+/// (e.g. an overview camera with a feet camera bottom-left). Recording it starts
+/// every member camera in parallel; the worker composites them per segment.
+model ComposedSource {
+  id        String   @id @default(cuid())
+  schoolId  String
+  roomId    String
+  name      String
+  createdAt DateTime @default(now())
+
+  school  School                 @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  room    Room                   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  members ComposedSourceMember[]
+
+  @@index([schoolId])
+  @@index([roomId])
+}
+
+/// One camera within a composed source: the 'main' (full-frame) camera, or a
+/// 'pip' inset placed in a corner at a fraction of the frame width.
+model ComposedSourceMember {
+  id       String  @id @default(cuid())
+  sourceId String
+  deviceId String
+  role     String // 'main' | 'pip'
+  position String? // 'bottom-left' | 'bottom-right' | 'top-left' | 'top-right' (pip only)
+  scale    Float? // inset width as a fraction of the frame (pip only)
+  order    Int     @default(0)
+
+  source ComposedSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  device Device         @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([sourceId])
+  @@index([deviceId])
 }
 
 /// A school holiday/break period. Recurring lessons skip weeks that fall in a
@@ -113,6 +153,11 @@ model Device {
   id               String    @id @default(cuid())
   schoolId         String
   name             String
+  // The room this device is installed in. Cameras of a room are shown together
+  // in the control room; one device per room may be marked the audio source,
+  // whose sound is laid under every video segment recorded in that room.
+  roomId           String?
+  isAudioSource    Boolean   @default(false)
   pairingCode      String?   @unique // set while waiting to pair, cleared after
   pairingExpiresAt DateTime?
   tokenHash        String?   @unique // sha256 of the device token, set on pairing
@@ -120,11 +165,14 @@ model Device {
   lastSeenAt       DateTime?
   createdAt        DateTime  @default(now())
 
-  school        School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  school        School                 @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  room          Room?                  @relation(fields: [roomId], references: [id], onDelete: SetNull)
   lessonDevices LessonDevice[]
   recordings    Recording[]
+  sourceMembers ComposedSourceMember[]
 
   @@index([schoolId])
+  @@index([roomId])
 }
 
 /// A planned lesson: a teacher and a student at a time, optionally filmed by
@@ -195,6 +243,17 @@ model Recording {
   cropH          Float?
   receivedChunks Int       @default(0)
   sizeBytes      Int       @default(0)
+  // Segments started together (one camera + the room's audio source, or the
+  // members of a composed source) share a group id; `isAudioTrack` marks the
+  // audio-source segment whose sound the worker lays under the paired video.
+  segmentGroupId String?
+  isAudioTrack   Boolean   @default(false)
+  // Layout within a composed source: 'main' (full frame) or 'pip' (corner inset
+  // at `layoutPosition`, width `layoutScale` of the frame). Null for a plain
+  // single-camera segment.
+  layoutRole     String?
+  layoutPosition String?
+  layoutScale    Float?
   startedAt      DateTime  @default(now())
   completedAt    DateTime?
 
@@ -203,6 +262,7 @@ model Recording {
 
   @@index([lessonId])
   @@index([deviceId])
+  @@index([segmentGroupId])
 }
 
 /// Which devices film a given lesson (many-to-many join).

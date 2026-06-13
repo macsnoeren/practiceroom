@@ -24,6 +24,10 @@ export function useDeviceSocket() {
   const [activeRecording, setActiveRecording] = useState<ActiveRecording | null>(null);
   const [gainCommand, setGainCommand] = useState<number | null>(null);
   const socketRef = useRef<Socket | null>(null);
+  // Mirrors activeRecording so the (re)connect handler can report the true state
+  // without a stale closure. Reporting 'idle' while a recording is active would
+  // let the server treat the live recording as orphaned and reject its chunks.
+  const activeRecordingRef = useRef<ActiveRecording | null>(null);
 
   useEffect(() => {
     const token = getToken();
@@ -34,19 +38,23 @@ export function useDeviceSocket() {
 
     socket.on('connect', () => {
       setConnected(true);
-      socket.emit(SOCKET_EVENTS.statusUpdate, { state: 'idle' });
+      socket.emit(SOCKET_EVENTS.statusUpdate, {
+        state: activeRecordingRef.current ? 'recording' : 'idle',
+      });
     });
     socket.on('disconnect', () => setConnected(false));
 
     socket.on(SOCKET_EVENTS.recordingStart, (raw: unknown) => {
       const parsed = StartRecordingMsgSchema.safeParse(raw);
       if (!parsed.success) return;
+      activeRecordingRef.current = parsed.data;
       setActiveRecording(parsed.data);
       socket.emit(SOCKET_EVENTS.statusUpdate, { state: 'recording' });
     });
     socket.on(SOCKET_EVENTS.recordingStop, (raw: unknown) => {
       const parsed = StopRecordingMsgSchema.safeParse(raw);
       if (!parsed.success) return;
+      activeRecordingRef.current = null;
       setActiveRecording(null);
       socket.emit(SOCKET_EVENTS.statusUpdate, { state: 'idle' });
     });

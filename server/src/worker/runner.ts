@@ -8,14 +8,18 @@ import {
   buildBlackVideoArgs,
   buildCanonicalExternalArgs,
   buildConcatArgs,
+  buildMuxVideoOverAudioArgs,
+  buildPipCompositeArgs,
   buildSilentAudioArgs,
   type CropRect,
+  type PipInput,
 } from '../lib/composite.js';
 import { probeStreams } from '../lib/probe.js';
 import type { Recording } from '@prisma/client';
 import {
   brandingExists,
   brandingPath,
+  composedSegmentPath,
   compositePath,
   compositeSize,
   ensureCompositeDir,
@@ -95,6 +99,83 @@ async function normalizeSegment(
   }
   temps.push(fixed);
   return fixed;
+}
+
+/** One concat input: the segment file on disk and its optional crop rectangle. */
+interface SegmentInput {
+  path: string;
+  crop: CropRect | null;
+}
+
+/**
+ * Turns a lesson's completed recordings into the ordered list of segment inputs
+ * for the concat step. Recordings started together (a camera + the room's audio
+ * source) share a `segmentGroupId`: for such a group the camera's video is muxed
+ * with the audio source's sound, so the same microphone sits under every camera.
+ * Recordings without a group are their own single segment (unchanged behaviour).
+ * A lone audio-track recording (its camera partner was deleted/failed) is
+ * auxiliary and skipped.
+ */
+async function buildLessonSegments(
+  lessonId: string,
+  completed: Recording[],
+  temps: string[],
+): Promise<SegmentInput[]> {
+  const groups = new Map<string, Recording[]>();
+  for (const r of completed) {
+    const key = r.segmentGroupId ?? `solo:${r.id}`;
+    const list = groups.get(key);
+    if (list) list.push(r);
+    else groups.set(key, [r]);
+  }
+
+  const ordered: { startedAt: number; input: SegmentInput }[] = [];
+  for (const members of groups.values()) {
+    const audioRec = members.find((r) => r.isAudioTrack) ?? null;
+    const videoMembers = members.filter((r) => !r.isAudioTrack);
+    if (videoMembers.length === 0) continue; // lone audio track: auxiliary
+
+    // The full-frame camera, plus any picture-in-picture insets (composed source).
+    const main = videoMembers.find((r) => r.layoutRole === 'main') ?? videoMembers[0]!;
+    const pips = videoMembers.filter((r) => r.layoutRole === 'pip' && r.hasVideo);
+
+    let path: string;
+    let crop: CropRect | null;
+    if (pips.length > 0 && main.hasVideo) {
+      // Composed source: overlay the insets onto the main camera, with the audio
+      // source's sound (when present) laid under the result.
+      path = composedSegmentPath(lessonId, main.id);
+      await runFfmpeg(
+        buildPipCompositeArgs(
+          recordingPath(main.id),
+          pips.map((p) => ({
+            input: recordingPath(p.id),
+            position: (p.layoutPosition ?? 'bottom-right') as PipInput['position'],
+            scale: p.layoutScale ?? 0.28,
+          })),
+          audioRec ? recordingPath(audioRec.id) : null,
+          path,
+        ),
+      );
+      temps.push(path);
+      crop = null; // a crop does not apply to a composed frame
+    } else if (audioRec && main.hasVideo) {
+      // Single camera with the audio source's sound laid under it.
+      path = normalizedSegmentPath(lessonId, main.id);
+      await runFfmpeg(
+        buildMuxVideoOverAudioArgs(recordingPath(main.id), recordingPath(audioRec.id), path),
+      );
+      temps.push(path);
+      crop = recordingCrop(main);
+    } else {
+      path = await normalizeSegment(lessonId, main, temps);
+      crop = recordingCrop(main);
+    }
+    ordered.push({ startedAt: main.startedAt.getTime(), input: { path, crop } });
+  }
+
+  ordered.sort((a, b) => a.startedAt - b.startedAt);
+  return ordered.map((o) => o.input);
 }
 
 /**
@@ -179,9 +260,14 @@ export async function processQueuedJob(): Promise<JobResult> {
     // padded with a black frame / silent track so they stitch in cleanly.
     const temps: string[] = [];
     try {
-      const lessonInputs = await Promise.all(
-        completed.map((r) => normalizeSegment(job.lessonId, r, temps)),
-      );
+      const lessonSegments = await buildLessonSegments(job.lessonId, completed, temps);
+      if (lessonSegments.length === 0) {
+        await prisma.compositeVideo.update({
+          where: { id: job.id },
+          data: { status: 'failed', error: 'Geen bruikbare videosegmenten om samen te voegen' },
+        });
+        return 'failed';
+      }
       // Crops are aligned by input index; intro/outro clips are never cropped.
       const inputs: string[] = [];
       const crops: (CropRect | null)[] = [];
@@ -190,10 +276,10 @@ export async function processQueuedJob(): Promise<JobResult> {
         inputs.push(intro);
         crops.push(null);
       }
-      lessonInputs.forEach((input, i) => {
-        inputs.push(input);
-        crops.push(recordingCrop(completed[i]!));
-      });
+      for (const seg of lessonSegments) {
+        inputs.push(seg.path);
+        crops.push(seg.crop);
+      }
       const outro = await brandingInput(school, 'outro', job.lessonId, temps);
       if (outro) {
         inputs.push(outro);

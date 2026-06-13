@@ -252,12 +252,80 @@ export const DeviceDtoSchema = z.object({
   id: z.string(),
   schoolId: z.string(),
   name: z.string(),
+  roomId: z.string().nullable(),
+  isAudioSource: z.boolean(),
   paired: z.boolean(),
   pairedAt: z.string().nullable(),
   lastSeenAt: z.string().nullable(),
   createdAt: z.string(),
 });
 export type DeviceDto = z.infer<typeof DeviceDtoSchema>;
+
+/** Staff assigns a device to a room and/or marks it the room's audio source. */
+export const UpdateDeviceSchema = z.object({
+  roomId: z.string().min(1).nullable().optional(),
+  isAudioSource: z.boolean().optional(),
+});
+export type UpdateDeviceInput = z.infer<typeof UpdateDeviceSchema>;
+
+/* ---- Composed sources (picture-in-picture of several cameras) ------------- */
+
+/** Corner an inset camera is placed in. */
+export const PIP_POSITIONS = ['bottom-left', 'bottom-right', 'top-left', 'top-right'] as const;
+export const PipPositionSchema = z.enum(PIP_POSITIONS);
+export type PipPosition = (typeof PIP_POSITIONS)[number];
+
+/** Inset size presets, expressed as a fraction of the frame width. */
+export const PIP_SIZES = { small: 0.2, medium: 0.28, large: 0.36 } as const;
+export const PIP_SIZE_NAMES = ['small', 'medium', 'large'] as const;
+export const PipSizeSchema = z.enum(PIP_SIZE_NAMES);
+export type PipSize = (typeof PIP_SIZE_NAMES)[number];
+
+export const ComposedSourceMemberDtoSchema = z.object({
+  deviceId: z.string(),
+  role: z.enum(['main', 'pip']),
+  position: PipPositionSchema.nullable(),
+  scale: z.number().nullable(),
+});
+export type ComposedSourceMemberDto = z.infer<typeof ComposedSourceMemberDtoSchema>;
+
+export const ComposedSourceDtoSchema = z.object({
+  id: z.string(),
+  schoolId: z.string(),
+  roomId: z.string(),
+  name: z.string(),
+  members: z.array(ComposedSourceMemberDtoSchema),
+  createdAt: z.string(),
+});
+export type ComposedSourceDto = z.infer<typeof ComposedSourceDtoSchema>;
+
+/** One member when creating/updating a composed source. */
+export const ComposedSourceMemberInputSchema = z.object({
+  deviceId: z.string().min(1),
+  role: z.enum(['main', 'pip']),
+  position: PipPositionSchema.optional(),
+  size: PipSizeSchema.optional(),
+});
+
+const composedSourceBody = {
+  name: z.string().trim().min(1).max(120),
+  roomId: z.string().min(1),
+  members: z.array(ComposedSourceMemberInputSchema).min(1).max(5),
+};
+
+/** Exactly one main camera; pips carry a corner position. */
+const oneMain = (d: { members: { role: 'main' | 'pip' }[] }) =>
+  d.members.filter((m) => m.role === 'main').length === 1;
+
+export const CreateComposedSourceSchema = z
+  .object(composedSourceBody)
+  .refine(oneMain, { message: 'Kies precies één hoofdcamera' });
+export type CreateComposedSourceInput = z.infer<typeof CreateComposedSourceSchema>;
+
+export const UpdateComposedSourceSchema = z
+  .object(composedSourceBody)
+  .refine(oneMain, { message: 'Kies precies één hoofdcamera' });
+export type UpdateComposedSourceInput = z.infer<typeof UpdateComposedSourceSchema>;
 
 /** Returned when a device is created or its code is regenerated. */
 export const PairingCodeResultSchema = z.object({
@@ -554,6 +622,9 @@ export const RecordingDtoSchema = z.object({
   status: RecordingStatusSchema,
   hasVideo: z.boolean(),
   hasAudio: z.boolean(),
+  // True for a segment captured by a room's audio source: its sound is laid
+  // under the paired camera video, so the UI hides it as a standalone segment.
+  isAudioTrack: z.boolean(),
   crop: CropRectSchema.nullable(),
   sizeBytes: z.number(),
   startedAt: z.string(),
@@ -577,9 +648,15 @@ export const PlaybackUrlSchema = z.object({
 export type PlaybackUrl = z.infer<typeof PlaybackUrlSchema>;
 
 /** Staff starts recording on ONE specific camera (switching stops the rest). */
-export const StartRecordingInputSchema = z.object({
-  deviceId: z.string().min(1),
-});
+// Staff starts a segment from either a single camera or a composed source.
+export const StartRecordingInputSchema = z
+  .object({
+    deviceId: z.string().min(1).optional(),
+    sourceId: z.string().min(1).optional(),
+  })
+  .refine((d) => !!d.deviceId !== !!d.sourceId, {
+    message: 'Kies een camera of een samengestelde bron',
+  });
 export type StartRecordingInput = z.infer<typeof StartRecordingInputSchema>;
 
 /** The single combined lesson video produced by the worker. */

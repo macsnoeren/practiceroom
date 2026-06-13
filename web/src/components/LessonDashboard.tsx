@@ -150,6 +150,9 @@ export function LessonDashboard() {
   if (!detail) return <p className="muted">Laden…</p>;
 
   const finished = detail.status === 'recorded' || detail.status === 'ready';
+  // Hide the room's audio-source segments: their sound is laid under the paired
+  // camera video by the worker, so they are not shown as standalone segments.
+  const videoRecordings = detail.recordings.filter((r) => !r.isAudioTrack);
 
   return (
     <div>
@@ -285,9 +288,9 @@ export function LessonDashboard() {
             ))}
           </details>
 
-          {detail.recordings.length > 0 && (
+          {videoRecordings.length > 0 && (
             <ul className="material-list">
-              {detail.recordings.map((r, i) => (
+              {videoRecordings.map((r, i) => (
                 <li key={r.id}>
                   <div>
                     Segment {i + 1}: {deviceName(r.deviceId)}{' '}
@@ -326,8 +329,8 @@ export function LessonDashboard() {
 
       <div className="card">
         <CompositePlayer lessonId={id} composite={detail.composite} />
-        <LessonPlayer recordings={detail.recordings} deviceName={deviceName} />
-        {detail.composite === null && detail.recordings.length === 0 && (
+        <LessonPlayer recordings={videoRecordings} deviceName={deviceName} />
+        {detail.composite === null && videoRecordings.length === 0 && (
           <p className="muted">Nog geen opnames.</p>
         )}
         {detail.composite?.status === 'completed' && <SaveToLibrary lessonId={id} />}

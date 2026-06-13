@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   AuditLogPageDtoSchema,
+  ComposedSourceDtoSchema,
   CreateDeviceResultSchema,
   DeviceDtoSchema,
   CompositeVideoDtoSchema,
@@ -21,6 +22,7 @@ import {
   UserDtoSchema,
   TwoFactorSetupSchema,
   InvitePreviewSchema,
+  type CreateComposedSourceInput,
   type CreateHolidayInput,
   type CreateLessonInput,
   type CreateLibraryItemInput,
@@ -34,6 +36,8 @@ import {
   type LoginInput,
   type RegisterSchoolInput,
   type SchoolDto,
+  type UpdateComposedSourceInput,
+  type UpdateDeviceInput,
   type UpdateLessonInput,
   type UpdateProfileInput,
   type UpdateUserInput,
@@ -197,6 +201,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ name }),
     }),
+  updateDevice: (id: string, input: UpdateDeviceInput) =>
+    request(`/api/devices/${id}`, DeviceDtoSchema, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
   regeneratePairingCode: (id: string) =>
     request(`/api/devices/${id}/pairing-code`, PairingCodeResultSchema, { method: 'POST' }),
   revokeDevice: (id: string) =>
@@ -295,6 +304,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ deviceId }),
     }),
+  startRecordingSource: (lessonId: string, sourceId: string) =>
+    request(`/api/lessons/${lessonId}/recording/start`, RecordingDtoSchema, {
+      method: 'POST',
+      body: JSON.stringify({ sourceId }),
+    }),
   stopRecording: (lessonId: string) =>
     request(`/api/lessons/${lessonId}/recording/stop`, z.object({ stopped: z.number() }), {
       method: 'POST',
@@ -352,4 +366,21 @@ export const api = {
   createRoom: (name: string) =>
     request('/api/rooms', RoomDtoSchema, { method: 'POST', body: JSON.stringify({ name }) }),
   deleteRoom: (id: string) => requestVoid(`/api/rooms/${id}`, { method: 'DELETE' }),
+
+  listComposedSources: (roomId?: string) =>
+    request(
+      `/api/sources${roomId ? `?roomId=${encodeURIComponent(roomId)}` : ''}`,
+      z.array(ComposedSourceDtoSchema),
+    ),
+  createComposedSource: (input: CreateComposedSourceInput) =>
+    request('/api/sources', ComposedSourceDtoSchema, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  updateComposedSource: (id: string, input: UpdateComposedSourceInput) =>
+    request(`/api/sources/${id}`, ComposedSourceDtoSchema, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  deleteComposedSource: (id: string) => requestVoid(`/api/sources/${id}`, { method: 'DELETE' }),
 };

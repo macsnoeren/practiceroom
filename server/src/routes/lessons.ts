@@ -430,7 +430,7 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const me = requireAuth(request);
       const { id } = request.params as IdParam;
-      const { deviceId } = StartRecordingInputSchema.parse(request.body);
+      const { deviceId, sourceId } = StartRecordingInputSchema.parse(request.body);
 
       const lesson = await prisma.lesson.findFirst({
         where: { id, schoolId: me.schoolId },
@@ -443,25 +443,118 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
       if (lesson.status === 'recorded' || lesson.status === 'ready') {
         throw badRequest('Deze les is al afgerond');
       }
-      if (!lesson.devices.some((d) => d.deviceId === deviceId)) {
-        throw badRequest('Deze camera hoort niet bij de les');
-      }
-      if (!app.presence.isOnline(deviceId)) {
-        throw badRequest('Deze camera is niet online');
+
+      // Resolve which cameras to start, with their layout within the segment. A
+      // single camera has no layout; a composed source contributes its main
+      // camera plus the pip insets that are currently online.
+      type StartTarget = {
+        deviceId: string;
+        layoutRole: string | null;
+        layoutPosition: string | null;
+        layoutScale: number | null;
+      };
+      const targets: StartTarget[] = [];
+
+      if (deviceId) {
+        if (!lesson.devices.some((d) => d.deviceId === deviceId)) {
+          throw badRequest('Deze camera hoort niet bij de les');
+        }
+        if (!app.presence.isOnline(deviceId)) {
+          throw badRequest('Deze camera is niet online');
+        }
+        targets.push({ deviceId, layoutRole: null, layoutPosition: null, layoutScale: null });
+      } else {
+        const source = await prisma.composedSource.findFirst({
+          where: { id: sourceId, schoolId: me.schoolId },
+          include: { members: { orderBy: { order: 'asc' } } },
+        });
+        if (!source) throw notFound('Samengestelde bron niet gevonden');
+        const main = source.members.find((m) => m.role === 'main');
+        if (!main) throw badRequest('De bron heeft geen hoofdcamera');
+        if (!app.presence.isOnline(main.deviceId)) {
+          throw badRequest('De hoofdcamera van de bron is niet online');
+        }
+        targets.push({
+          deviceId: main.deviceId,
+          layoutRole: 'main',
+          layoutPosition: null,
+          layoutScale: null,
+        });
+        for (const pip of source.members.filter((m) => m.role === 'pip')) {
+          // Skip offline insets — the source still records without them.
+          if (!app.presence.isOnline(pip.deviceId)) continue;
+          targets.push({
+            deviceId: pip.deviceId,
+            layoutRole: 'pip',
+            layoutPosition: pip.position,
+            layoutScale: pip.scale,
+          });
+        }
       }
 
-      // Switching cameras: stop whatever is recording now.
+      // Switching sources: stop whatever is recording now.
       await stopActiveSegments(id);
 
-      const recording = await prisma.recording.create({
-        data: { lessonId: id, deviceId, status: 'recording' },
-      });
+      // Everything started together shares a group id so the worker stitches it
+      // into one segment (camera(s) overlaid, the audio source laid underneath).
+      const segmentGroupId = randomUUID();
       await prisma.lesson.update({ where: { id }, data: { status: 'recording' } });
 
-      app.io
-        .to(`device:${deviceId}`)
-        .emit(SOCKET_EVENTS.recordingStart, { recordingId: recording.id, lessonId: id });
-      return reply.code(201).send(toRecordingDto(recording));
+      const lessonDeviceIds = new Set(lesson.devices.map((d) => d.deviceId));
+      let firstRecordingId: string | null = null;
+      for (const target of targets) {
+        if (!lessonDeviceIds.has(target.deviceId)) {
+          await prisma.lessonDevice.create({ data: { lessonId: id, deviceId: target.deviceId } });
+          lessonDeviceIds.add(target.deviceId);
+        }
+        const created = await prisma.recording.create({
+          data: {
+            lessonId: id,
+            deviceId: target.deviceId,
+            status: 'recording',
+            segmentGroupId,
+            layoutRole: target.layoutRole,
+            layoutPosition: target.layoutPosition,
+            layoutScale: target.layoutScale,
+          },
+        });
+        if (firstRecordingId === null) firstRecordingId = created.id;
+        app.io
+          .to(`device:${target.deviceId}`)
+          .emit(SOCKET_EVENTS.recordingStart, { recordingId: created.id, lessonId: id });
+      }
+
+      // If the lesson's room has a (different, online) audio source not already
+      // recording, capture it in parallel as the audio track for this segment.
+      if (lesson.roomId) {
+        const audioSource = await prisma.device.findFirst({
+          where: { schoolId: me.schoolId, roomId: lesson.roomId, isAudioSource: true },
+        });
+        if (
+          audioSource &&
+          app.presence.isOnline(audioSource.id) &&
+          !targets.some((t) => t.deviceId === audioSource.id)
+        ) {
+          if (!lessonDeviceIds.has(audioSource.id)) {
+            await prisma.lessonDevice.create({ data: { lessonId: id, deviceId: audioSource.id } });
+          }
+          const audioRecording = await prisma.recording.create({
+            data: {
+              lessonId: id,
+              deviceId: audioSource.id,
+              status: 'recording',
+              segmentGroupId,
+              isAudioTrack: true,
+            },
+          });
+          app.io
+            .to(`device:${audioSource.id}`)
+            .emit(SOCKET_EVENTS.recordingStart, { recordingId: audioRecording.id, lessonId: id });
+        }
+      }
+
+      const main = await prisma.recording.findUniqueOrThrow({ where: { id: firstRecordingId! } });
+      return reply.code(201).send(toRecordingDto(main));
     },
   );
 

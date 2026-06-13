@@ -171,11 +171,21 @@ export async function recordingRoutes(app: FastifyInstance): Promise<void> {
         } else {
           await removeFile(compositePath(recording.lessonId));
           await prisma.compositeVideo.delete({ where: { id: composite.id } });
-          await prisma.lesson.update({
-            where: { id: recording.lessonId },
-            data: { status: 'recorded' },
-          });
         }
+      }
+      // Reset to 'planned' when no active or completed recordings remain so the
+      // teacher can start a fresh recording ("opnieuw beginnen").
+      const liveRemaining = await prisma.recording.count({
+        where: {
+          lessonId: recording.lessonId,
+          status: { in: ['recording', 'completed'] },
+        },
+      });
+      if (liveRemaining === 0) {
+        await prisma.lesson.update({
+          where: { id: recording.lessonId },
+          data: { status: 'planned' },
+        });
       }
       return reply.code(204).send();
     },

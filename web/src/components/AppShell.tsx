@@ -5,6 +5,7 @@ import { ApiError, api } from '../api.js';
 import { useTheme } from '../useTheme.js';
 import { LessonManagement } from './LessonManagement.js';
 import { LessonDashboard } from './LessonDashboard.js';
+import { ComposedSourceManagement } from './ComposedSourceManagement.js';
 import { DeviceManagement } from './DeviceManagement.js';
 import { UserManagement } from './UserManagement.js';
 import { StudentLessons } from './StudentLessons.js';
@@ -171,6 +172,7 @@ export function AppShell({
                     subtitle="Registreer en koppel opnameapparaten."
                   >
                     <DeviceManagement />
+                    <ComposedSourceManagement />
                   </Page>
                 }
               />

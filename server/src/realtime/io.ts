@@ -185,10 +185,22 @@ export function setupRealtime(app: FastifyInstance): void {
       // still in 'recording' status in the DB are orphaned (crash / missed stop
       // event) and will never be completed on their own — mark them failed so
       // they can be deleted and don't block the lesson dashboard.
+      //
+      // But only ones that have had time to get going: a just-created recording
+      // can momentarily race with a stray idle (a reconnect handshake or a second
+      // connection of the same device) before its first chunk arrives. Failing it
+      // then would make every chunk upload 409. The grace period leaves genuinely
+      // abandoned recordings (always older) to be cleaned up, while protecting
+      // fresh ones.
       if (parsed.data.state === 'idle') {
+        const orphanCutoff = new Date(Date.now() - 60_000);
         prisma.recording
           .updateMany({
-            where: { deviceId: data.deviceId, status: 'recording' },
+            where: {
+              deviceId: data.deviceId,
+              status: 'recording',
+              startedAt: { lt: orphanCutoff },
+            },
             data: { status: 'failed', completedAt: new Date() },
           })
           .catch(() => undefined);

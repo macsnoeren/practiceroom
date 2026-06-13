@@ -1,9 +1,9 @@
 import type { FastifyInstance } from 'fastify';
-import { CreateDeviceSchema, PairDeviceSchema } from '@practiceroom/shared';
+import { CreateDeviceSchema, PairDeviceSchema, UpdateDeviceSchema } from '@practiceroom/shared';
 import { prisma } from '../db.js';
 import { requireAuth, requireRole } from '../auth/plugin.js';
 import { authenticateDevice } from '../auth/device.js';
-import { notFound, unauthorized } from '../lib/errors.js';
+import { badRequest, notFound, unauthorized } from '../lib/errors.js';
 import { toDeviceDto } from '../lib/dto.js';
 import {
   PAIRING_TTL_MS,
@@ -60,6 +60,56 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
     });
     return devices.map(toDeviceDto);
   });
+
+  // Assign a device to a room and/or mark it the room's audio source. Only one
+  // device per room may be the audio source, so setting it here clears the flag
+  // on the others in the same room.
+  app.patch(
+    '/api/devices/:id',
+    { preHandler: requireRole('admin', 'teacher') },
+    async (request) => {
+      const me = requireAuth(request);
+      const { id } = request.params as DeviceParams;
+      const input = UpdateDeviceSchema.parse(request.body);
+
+      const device = await prisma.device.findFirst({ where: { id, schoolId: me.schoolId } });
+      if (!device) throw notFound('Apparaat niet gevonden');
+
+      // The room the device will belong to after this update.
+      const nextRoomId = input.roomId !== undefined ? input.roomId : device.roomId;
+      if (input.roomId) {
+        const room = await prisma.room.findFirst({
+          where: { id: input.roomId, schoolId: me.schoolId },
+        });
+        if (!room) throw notFound('Lokaal niet gevonden');
+      }
+      // An audio source only makes sense inside a room: leaving a room clears it.
+      let nextIsAudioSource =
+        input.isAudioSource !== undefined ? input.isAudioSource : device.isAudioSource;
+      if (!nextRoomId) nextIsAudioSource = false;
+      if (input.isAudioSource === true && !nextRoomId) {
+        throw badRequest('Wijs het apparaat eerst aan een lokaal toe');
+      }
+
+      const updated = await prisma.$transaction(async (tx) => {
+        if (nextIsAudioSource && nextRoomId) {
+          // Demote any other audio source in the target room.
+          await tx.device.updateMany({
+            where: { roomId: nextRoomId, isAudioSource: true, id: { not: id } },
+            data: { isAudioSource: false },
+          });
+        }
+        return tx.device.update({
+          where: { id },
+          data: {
+            ...(input.roomId !== undefined ? { roomId: input.roomId } : {}),
+            isAudioSource: nextIsAudioSource,
+          },
+        });
+      });
+      return toDeviceDto(updated);
+    },
+  );
 
   // Regenerate a pairing code (e.g. after it expired). Only for unpaired devices.
   app.post(

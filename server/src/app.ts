@@ -17,6 +17,7 @@ import { libraryRoutes } from './routes/library.js';
 import { settingsRoutes } from './routes/settings.js';
 import { holidayRoutes } from './routes/holidays.js';
 import { roomRoutes } from './routes/rooms.js';
+import { sourceRoutes } from './routes/sources.js';
 import { recordingRoutes } from './routes/recordings.js';
 import { setupRealtime } from './realtime/io.js';
 
@@ -89,6 +90,7 @@ export async function buildApp(
   await app.register(settingsRoutes);
   await app.register(holidayRoutes);
   await app.register(roomRoutes);
+  await app.register(sourceRoutes);
   await app.register(recordingRoutes);
 
   return app;

@@ -117,6 +117,15 @@ export function normalizedSegmentPath(lessonId: string, recordingId: string): st
   return join(root, 'composites', `${lessonId}.norm.${recordingId}.webm`);
 }
 
+/**
+ * Temp path for a composed (picture-in-picture) segment built from several
+ * cameras. Uses Matroska so the re-encoded h264/opus overlay result stores
+ * cleanly before the concat step re-encodes it like any other segment.
+ */
+export function composedSegmentPath(lessonId: string, recordingId: string): string {
+  return join(root, 'composites', `${lessonId}.pip.${recordingId}.mkv`);
+}
+
 /** Best-effort removal of a file (used to clean up temporary segments). */
 export async function removeFile(path: string): Promise<void> {
   await rm(path, { force: true }).catch(() => undefined);

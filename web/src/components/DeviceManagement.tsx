@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { CreateDeviceSchema, type DeviceDto } from '@practiceroom/shared';
+import { CreateDeviceSchema, type DeviceDto, type RoomDto } from '@practiceroom/shared';
 import { ApiError, api } from '../api.js';
 import { usePresence } from '../usePresence.js';
 import { Modal } from './Modal.js';
@@ -24,6 +24,7 @@ function CodeBox({ code, expiresAt }: PairingCode) {
 
 export function DeviceManagement() {
   const [devices, setDevices] = useState<DeviceDto[] | null>(null);
+  const [rooms, setRooms] = useState<RoomDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [activeCode, setActiveCode] = useState<(PairingCode & { deviceId: string }) | null>(null);
   const [open, setOpen] = useState(false);
@@ -40,7 +41,30 @@ export function DeviceManagement() {
 
   useEffect(() => {
     void refresh();
+    api.listRooms().then(setRooms).catch(() => undefined);
   }, [refresh]);
+
+  // Assign a device to a room (or none), keeping the table in sync.
+  async function setRoom(id: string, roomId: string | null) {
+    setError(null);
+    try {
+      await api.updateDevice(id, { roomId });
+      await refresh();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Lokaal koppelen mislukt');
+    }
+  }
+
+  // Mark/unmark a device as its room's audio source (one per room).
+  async function setAudioSource(id: string, isAudioSource: boolean) {
+    setError(null);
+    try {
+      await api.updateDevice(id, { isAudioSource });
+      await refresh();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Geluidsbron instellen mislukt');
+    }
+  }
 
   async function regenerate(id: string) {
     setError(null);
@@ -102,6 +126,8 @@ export function DeviceManagement() {
           <thead>
             <tr>
               <th>Naam</th>
+              <th>Lokaal</th>
+              <th>Geluidsbron</th>
               <th>Status</th>
               <th>Live</th>
               <th></th>
@@ -114,6 +140,31 @@ export function DeviceManagement() {
               return (
                 <tr key={d.id}>
                   <td>{d.name}</td>
+                  <td>
+                    <select
+                      value={d.roomId ?? ''}
+                      onChange={(e) => void setRoom(d.id, e.target.value || null)}
+                      aria-label={`Lokaal voor ${d.name}`}
+                    >
+                      <option value="">— geen —</option>
+                      {rooms.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.name}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    <label className="muted" title="Geluid van deze bron komt onder alle video's van dit lokaal">
+                      <input
+                        type="checkbox"
+                        checked={d.isAudioSource}
+                        disabled={!d.roomId}
+                        onChange={(e) => void setAudioSource(d.id, e.target.checked)}
+                      />{' '}
+                      🎙
+                    </label>
+                  </td>
                   <td>
                     {d.paired ? (
                       <span className="tag tag-ok">gekoppeld</span>

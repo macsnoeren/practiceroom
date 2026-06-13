@@ -1,5 +1,7 @@
 import type {
   AuditLog,
+  ComposedSource,
+  ComposedSourceMember,
   CompositeVideo,
   Device,
   Holiday,
@@ -14,6 +16,8 @@ import type {
 } from '@prisma/client';
 import type {
   AuditLogDto,
+  ComposedSourceDto,
+  ComposedSourceMemberDto,
   CompositeStatus,
   CompositeVideoDto,
   DeviceDto,
@@ -116,6 +120,8 @@ export function toDeviceDto(device: Device): DeviceDto {
     id: device.id,
     schoolId: device.schoolId,
     name: device.name,
+    roomId: device.roomId,
+    isAudioSource: device.isAudioSource,
     paired: device.tokenHash !== null,
     pairedAt: device.pairedAt?.toISOString() ?? null,
     lastSeenAt: device.lastSeenAt?.toISOString() ?? null,
@@ -222,6 +228,26 @@ export function toRoomDto(room: Room): RoomDto {
   };
 }
 
+type ComposedSourceRow = ComposedSource & { members: ComposedSourceMember[] };
+
+export function toComposedSourceDto(source: ComposedSourceRow): ComposedSourceDto {
+  return {
+    id: source.id,
+    schoolId: source.schoolId,
+    roomId: source.roomId,
+    name: source.name,
+    members: [...source.members]
+      .sort((a, b) => a.order - b.order)
+      .map((m) => ({
+        deviceId: m.deviceId,
+        role: m.role as 'main' | 'pip',
+        position: (m.position as ComposedSourceMemberDto['position']) ?? null,
+        scale: m.scale,
+      })),
+    createdAt: source.createdAt.toISOString(),
+  };
+}
+
 export function toHolidayDto(holiday: Holiday): HolidayDto {
   return {
     id: holiday.id,
@@ -248,6 +274,7 @@ export function toRecordingDto(recording: Recording): RecordingDto {
     status: recording.status as RecordingStatus,
     hasVideo: recording.hasVideo,
     hasAudio: recording.hasAudio,
+    isAudioTrack: recording.isAudioTrack,
     crop,
     sizeBytes: recording.sizeBytes,
     startedAt: recording.startedAt.toISOString(),
