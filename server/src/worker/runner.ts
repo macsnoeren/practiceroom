@@ -14,7 +14,7 @@ import {
   type CropRect,
   type PipInput,
 } from '../lib/composite.js';
-import { probeStreams } from '../lib/probe.js';
+import { probeDuration, probeStreams } from '../lib/probe.js';
 import type { Recording } from '@prisma/client';
 import {
   brandingExists,
@@ -144,16 +144,31 @@ async function buildLessonSegments(
     if (pips.length > 0 && main.hasVideo) {
       // Composed source: overlay the insets onto the main camera, with the audio
       // source's sound (when present) laid under the result.
+      //
+      // The member cameras begin a little apart (per-device warm-up) but stop
+      // together, so align by the END: each file's duration tells how much earlier
+      // it started, and we fast-seek that much off its front so every layer covers
+      // the same common window. Only done when all durations are known.
+      const mainPath = recordingPath(main.id);
+      const pipPaths = pips.map((p) => recordingPath(p.id));
+      const audioPath = audioRec ? recordingPath(audioRec.id) : null;
+      const allPaths = [mainPath, ...pipPaths, ...(audioPath ? [audioPath] : [])];
+      const durations = await Promise.all(allPaths.map((p) => probeDuration(p)));
+      const known = durations.every((d) => d > 0);
+      const minD = known ? Math.min(...durations) : 0;
+      const skip = (idx: number) => (known ? Math.max(0, durations[idx]! - minD) : 0);
+
       path = composedSegmentPath(lessonId, main.id);
       await runFfmpeg(
         buildPipCompositeArgs(
-          recordingPath(main.id),
-          pips.map((p) => ({
-            input: recordingPath(p.id),
+          { input: mainPath, skip: skip(0) },
+          pips.map((p, i) => ({
+            input: pipPaths[i]!,
             position: (p.layoutPosition ?? 'bottom-right') as PipInput['position'],
             scale: p.layoutScale ?? 0.28,
+            skip: skip(1 + i),
           })),
-          audioRec ? recordingPath(audioRec.id) : null,
+          audioPath ? { input: audioPath, skip: skip(1 + pips.length) } : null,
           path,
         ),
       );

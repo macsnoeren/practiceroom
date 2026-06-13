@@ -98,12 +98,25 @@ export function buildBlackVideoArgs(input: string, output: string): string[] {
 /** Margin (px) between a picture-in-picture inset and the frame edges. */
 const PIP_MARGIN = 24;
 
-/** A picture-in-picture inset: which camera file, the corner, and its width
- * as a fraction of the frame. */
+/** A picture-in-picture inset: which camera file, the corner, its width as a
+ * fraction of the frame, and how many seconds to trim from the front so it lines
+ * up with the other (independently started) layers. */
 export interface PipInput {
   input: string;
   position: 'bottom-left' | 'bottom-right' | 'top-left' | 'top-right';
   scale: number;
+  skip?: number;
+}
+
+/** A timed input: the file plus seconds to trim from its front for alignment. */
+export interface TimedInput {
+  input: string;
+  skip?: number;
+}
+
+/** Input args for one source, fast-seeking `skip` seconds in when aligning. */
+function seekInput(input: string, skip?: number): string[] {
+  return skip && skip > 0 ? ['-ss', skip.toFixed(3), '-i', input] : ['-i', input];
 }
 
 /** overlay x:y expression placing an inset in the given corner with a margin. */
@@ -127,23 +140,26 @@ function pipOverlayXY(position: PipInput['position']): string {
  * picture insets in the corners, optionally laying a separate audio source's
  * sound under it.
  *
- * Sync is the tricky part: the cameras are recorded independently as variable
- * frame-rate streams with their own timestamps. So EVERY layer (the base, each
- * inset, and the audio) is first reset to a common zero start (`setpts`) and the
- * video is forced to one constant frame rate (`fps`). Without this the insets
- * keep their raw VFR timestamps while the base is resampled, so an inset drifts
- * progressively ahead of the base and the audio. Output is Matroska (h264/opus);
- * the concat step re-encodes it like any other segment.
+ * Sync is the tricky part on two levels:
+ *  1. Rate/timestamps — the cameras are independent variable frame-rate streams,
+ *     so every layer is reset to a zero start (`setpts`) and forced to one
+ *     constant frame rate (`fps`); otherwise an inset drifts progressively ahead.
+ *  2. Start offset — the devices begin capturing at slightly different moments
+ *     (camera/encoder warm-up), so their t=0 are different real instants. The
+ *     stop is near-simultaneous, so the caller passes a per-input `skip` (derived
+ *     from each file's duration) that fast-seeks each source to the start of the
+ *     common overlapping window, making the layers line up frame-for-frame.
+ * Output is Matroska (h264/opus); the concat step re-encodes it like any segment.
  */
 export function buildPipCompositeArgs(
-  mainInput: string,
+  main: TimedInput,
   pips: PipInput[],
-  audioInput: string | null,
+  audio: TimedInput | null,
   output: string,
 ): string[] {
-  const args: string[] = ['-i', mainInput];
-  for (const pip of pips) args.push('-i', pip.input);
-  if (audioInput) args.push('-i', audioInput);
+  const args: string[] = [...seekInput(main.input, main.skip)];
+  for (const pip of pips) args.push(...seekInput(pip.input, pip.skip));
+  if (audio) args.push(...seekInput(audio.input, audio.skip));
 
   // Reset the base to a zero start before scaling/padding to the constant-fps frame.
   const filters: string[] = [`[0:v]setpts=PTS-STARTPTS,${SCALE_PAD}[base]`];
@@ -167,7 +183,7 @@ export function buildPipCompositeArgs(
   // source, fall back to the main camera's own track via an optional raw map
   // (the '?' tolerates a silent camera, which a filter could not).
   let audioMap: string;
-  if (audioInput) {
+  if (audio) {
     filters.push(`[${pips.length + 1}:a]aresample=async=1:first_pts=0,asetpts=PTS-STARTPTS[a]`);
     audioMap = '[a]';
   } else {
