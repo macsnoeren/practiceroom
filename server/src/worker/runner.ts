@@ -157,7 +157,7 @@ async function computeGroupAlignment(paths: string[], usedSyncTone: boolean): Pr
       const d = detections[i];
       if (d) {
         onset.set(p, round3(d.onsetS));
-        riseMs.set(p, Math.round(d.riseMs));
+        riseMs.set(p, d.riseMs === null ? null : Math.round(d.riseMs));
         dominance.set(p, round3(d.dominance));
       }
     });

@@ -22,10 +22,11 @@ EV_STATUS_UPDATE = "status:update"
 EV_SYNC_TONE = "sync:tone"
 
 FFMPEG_BIN = os.environ.get("PR_AGENT_FFMPEG", "ffmpeg")
-# Mirror of shared SYNC_TONE_* (defaults; the server sends the real values).
-DEFAULT_FREQUENCY = 1000.0
-DEFAULT_DURATION_S = 2.0
-FADE_S = 0.05
+# Mirror of shared SYNC_CHIRP_* (defaults; the server sends the real values).
+DEFAULT_START_HZ = 800.0
+DEFAULT_END_HZ = 5000.0
+DEFAULT_DURATION_S = 0.6
+FADE_S = 0.01
 
 
 class SpeakerAgent:
@@ -101,19 +102,24 @@ class SpeakerAgent:
         @sio.on(EV_SYNC_TONE)
         def on_tone(payload: dict) -> None:
             try:
-                freq = float(payload.get("frequency", DEFAULT_FREQUENCY))
+                start_hz = float(payload.get("startHz", DEFAULT_START_HZ))
+                end_hz = float(payload.get("endHz", DEFAULT_END_HZ))
                 dur = float(payload.get("durationMs", DEFAULT_DURATION_S * 1000)) / 1000.0
             except (TypeError, ValueError):
                 return
             threading.Thread(
-                target=self._play_tone, args=(freq, dur), name="pr-tone", daemon=True
+                target=self._play_chirp, args=(start_hz, end_hz, dur), name="pr-tone", daemon=True
             ).start()
 
     # -- playback ------------------------------------------------------------
 
-    def _play_tone(self, frequency: float, duration: float) -> None:
+    def _play_chirp(self, start_hz: float, end_hz: float, duration: float) -> None:
         device = self._cfg.alsa_device or "default"
         fade_out = max(0.0, duration - FADE_S)
+        # Linear sweep via aevalsrc: phase = 2*pi*(f0*t + 0.5*rate*t^2). Must match
+        # the worker's linear chirp template.
+        half_rate = (end_hz - start_hz) / (2 * duration) if duration > 0 else 0.0
+        expr = f"sin(2*PI*({start_hz:.3f}*t+{half_rate:.3f}*t*t))"
         cmd = [
             FFMPEG_BIN,
             "-hide_banner",
@@ -122,7 +128,7 @@ class SpeakerAgent:
             "-f",
             "lavfi",
             "-i",
-            f"sine=frequency={frequency:.0f}:duration={duration:.3f}",
+            f"aevalsrc={expr}:d={duration:.3f}:s=48000",
             "-af",
             f"afade=t=in:st=0:d={FADE_S},afade=t=out:st={fade_out:.3f}:d={FADE_S}",
             "-f",

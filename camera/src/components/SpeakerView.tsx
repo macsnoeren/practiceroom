@@ -31,8 +31,11 @@ export function SpeakerView({
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = 'sine';
-    osc.frequency.value = tone.frequency;
-    // A gentle fade in/out avoids clicks (which would smear the onset).
+    // A linear frequency sweep (chirp): broadband, so the worker can pinpoint it
+    // by matched filtering. Must match the worker's linear template.
+    osc.frequency.setValueAtTime(tone.startHz, now);
+    osc.frequency.linearRampToValueAtTime(tone.endHz, now + dur);
+    // A gentle fade in/out avoids clicks.
     gain.gain.setValueAtTime(0, now);
     gain.gain.linearRampToValueAtTime(0.9, now + fade);
     gain.gain.setValueAtTime(0.9, now + Math.max(fade, dur - fade));

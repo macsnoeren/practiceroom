@@ -8,27 +8,36 @@ const ROLE_LABEL: Record<string, string> = {
   single: 'camera',
 };
 
+const OK = 'var(--ok, #4ade80)';
+const WARN = 'var(--accent, #f59e0b)';
+const BAD = 'var(--danger, #f06b6b)';
+
 /**
- * Rates how reliably the tone was detected in one layer: a sharp rising edge
- * (small riseMs) and a clean, dominant tone mean a precise, repeatable onset.
+ * Rates how reliably the marker was detected in one layer. For the chirp the
+ * `dominance` field carries the matched-filter peak prominence (0..1): a clear,
+ * dominant peak means a precise, repeatable onset. (Older tone-based reports
+ * carry a rise time instead, rated on edge sharpness.)
  */
 function toneQuality(s: SyncStreamReport): { label: string; color: string; title: string } | null {
   if (s.toneOnsetS === null) return null;
   const rise = s.toneRiseMs ?? null;
   const dom = s.toneDominance ?? null;
-  const title = `flank ${rise === null ? '?' : `${rise} ms`}, sterkte ${
-    dom === null ? '?' : `${Math.round(dom * 100)}%`
-  }`;
-  // Sharp edge + dominant tone → precise. Smeared/weak → unreliable.
-  if (rise !== null && rise <= 30 && (dom ?? 0) >= 0.25)
-    return { label: `scherp (${rise} ms)`, color: 'var(--ok, #4ade80)', title };
-  if (rise !== null && rise <= 80 && (dom ?? 0) >= 0.12)
-    return { label: `matig (${rise} ms)`, color: 'var(--accent, #f59e0b)', title };
-  return {
-    label: rise === null ? 'zwak' : `wazig (${rise} ms)`,
-    color: 'var(--danger, #f06b6b)',
-    title,
-  };
+
+  // Legacy tone report: rate by edge sharpness.
+  if (rise !== null) {
+    const title = `flank ${rise} ms, sterkte ${dom === null ? '?' : `${Math.round(dom * 100)}%`}`;
+    if (rise <= 30 && (dom ?? 0) >= 0.25) return { label: `scherp (${rise} ms)`, color: OK, title };
+    if (rise <= 80 && (dom ?? 0) >= 0.12) return { label: `matig (${rise} ms)`, color: WARN, title };
+    return { label: `wazig (${rise} ms)`, color: BAD, title };
+  }
+
+  // Chirp report: rate by correlation peak prominence.
+  const p = dom ?? 0;
+  const pct = Math.round(p * 100);
+  const title = `piek-prominentie ${pct}%`;
+  if (p >= 0.5) return { label: `sterk (${pct}%)`, color: OK, title };
+  if (p >= 0.3) return { label: `matig (${pct}%)`, color: WARN, title };
+  return { label: `zwak (${pct}%)`, color: BAD, title };
 }
 
 /**

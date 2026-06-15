@@ -1,22 +1,30 @@
 import { spawn } from 'node:child_process';
 import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
-import { SYNC_TONE_FREQUENCY_HZ } from '@practiceroom/shared';
+import {
+  SYNC_CHIRP_END_HZ,
+  SYNC_CHIRP_START_HZ,
+  SYNC_TONE_DURATION_MS,
+  SYNC_TONE_FADE_MS,
+} from '@practiceroom/shared';
 import { env } from '../env.js';
 
-// Decode to mono at a low rate; 1000 Hz lands on a clean Goertzel bin at 8 kHz.
-const SAMPLE_RATE = 8000;
-const WINDOW_SAMPLES = 40; // 5 ms Goertzel window (a few cycles of 1 kHz)
-const HOP_SAMPLES = 8; // 1 ms hop → a fine energy envelope for the rising edge
-const ANALYZE_SECONDS = 12; // the tone plays near the very start
-// Fraction of a window's energy that must sit at the tone frequency to count it
-// as "tone present" (a pure tone approaches ~0.5; music/speech stays well below).
-const DOMINANCE_THRESHOLD = 0.12;
-// The tone must dominate this long to be the sync tone (filters out transients).
-const SUSTAIN_S = 0.8;
-// Align on where the tone's energy first rises through this fraction of its own
-// plateau. Using a fraction of each stream's plateau makes the detected moment
-// amplitude-independent, so a loud and a quiet mic land on the same instant.
-const EDGE_FRACTION = 0.5;
+// 16 kHz captures the whole sweep (up to 5 kHz) for a sharp correlation peak.
+const SAMPLE_RATE = 16000;
+const ANALYZE_SECONDS = 12; // the chirp plays within the first few seconds
+// Minimum peak prominence (0..1) to accept a detection; below this we treat the
+// chirp as "not found" and fall back to duration alignment.
+const MIN_PROMINENCE = 0.15;
+
+/** A detected sync marker, with a confidence metric for diagnostics. */
+export interface ToneDetection {
+  /** Start time (seconds) of the chirp in this stream (sub-sample, matched filter). */
+  onsetS: number;
+  /** Not used by the chirp detector (kept for report compatibility). */
+  riseMs: number | null;
+  /** Correlation peak prominence 0..1: how cleanly the chirp was found (higher
+   * = sharper, more reliable; near 0 = ambiguous/absent). */
+  dominance: number;
+}
 
 function ffmpegPath(): string {
   return env.FFMPEG_PATH || ffmpegInstaller.path;
@@ -50,49 +58,76 @@ function decodePcm(path: string): Promise<Float32Array> {
   });
 }
 
-/** Squared magnitude of the tone bin over one window (Goertzel). */
-function toneBinPower(samples: Float32Array, start: number, n: number): number {
-  const k = (2 * Math.PI * SYNC_TONE_FREQUENCY_HZ) / SAMPLE_RATE;
-  const coeff = 2 * Math.cos(k);
-  let s1 = 0;
-  let s2 = 0;
-  for (let i = 0; i < n; i++) {
-    const s0 = samples[start + i]! + coeff * s1 - s2;
-    s2 = s1;
-    s1 = s0;
+/** The same linear chirp the speaker plays, generated for matched filtering. */
+function generateChirp(): Float64Array {
+  const length = Math.round((SAMPLE_RATE * SYNC_TONE_DURATION_MS) / 1000);
+  const t1 = SYNC_TONE_DURATION_MS / 1000;
+  const f0 = SYNC_CHIRP_START_HZ;
+  const halfRate = (SYNC_CHIRP_END_HZ - f0) / (2 * t1); // 0.5 * sweep rate
+  const fade = Math.max(1, Math.round((SAMPLE_RATE * SYNC_TONE_FADE_MS) / 1000));
+  const out = new Float64Array(length);
+  for (let n = 0; n < length; n++) {
+    const t = n / SAMPLE_RATE;
+    let a = Math.sin(2 * Math.PI * (f0 * t + halfRate * t * t));
+    if (n < fade) a *= n / fade;
+    else if (n > length - fade) a *= (length - n) / fade;
+    out[n] = a;
   }
-  return s1 * s1 + s2 * s2 - coeff * s1 * s2;
+  return out;
 }
 
-/** Median of arr[from..to) — robust plateau estimate. */
-function median(arr: Float64Array, from: number, to: number): number {
-  const slice = Array.from(arr.subarray(from, to)).sort((a, b) => a - b);
-  if (slice.length === 0) return 0;
-  const mid = slice.length >> 1;
-  return slice.length % 2 ? slice[mid]! : (slice[mid - 1]! + slice[mid]!) / 2;
-}
-
-/** A detected sync tone, with quality metrics for diagnostics. */
-export interface ToneDetection {
-  /** Start time (seconds): the rising edge at 50% of the tone's own plateau. */
-  onsetS: number;
-  /** 10%→90% rise time (ms). Small = sharp edge = precise; large = smeared
-   * (reverb/noise) = the onset — and thus the alignment — is less reliable. */
-  riseMs: number;
-  /** Plateau dominance (0…~0.5): how cleanly the tone stands out (higher better). */
-  dominance: number;
+/** In-place iterative radix-2 Cooley–Tukey FFT (length must be a power of two). */
+function fft(re: Float64Array, im: Float64Array, inverse: boolean): void {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) {
+      const tr = re[i]!; re[i] = re[j]!; re[j] = tr;
+      const ti = im[i]!; im[i] = im[j]!; im[j] = ti;
+    }
+  }
+  for (let len = 2; len <= n; len <<= 1) {
+    const ang = ((inverse ? 2 : -2) * Math.PI) / len;
+    const wRe = Math.cos(ang);
+    const wIm = Math.sin(ang);
+    const half = len >> 1;
+    for (let i = 0; i < n; i += len) {
+      let curRe = 1;
+      let curIm = 0;
+      for (let k = 0; k < half; k++) {
+        const aRe = re[i + k]!;
+        const aIm = im[i + k]!;
+        const r2 = re[i + k + half]!;
+        const i2 = im[i + k + half]!;
+        const bRe = r2 * curRe - i2 * curIm;
+        const bIm = r2 * curIm + i2 * curRe;
+        re[i + k] = aRe + bRe;
+        im[i + k] = aIm + bIm;
+        re[i + k + half] = aRe - bRe;
+        im[i + k + half] = aIm - bIm;
+        const nextRe = curRe * wRe - curIm * wIm;
+        curIm = curRe * wIm + curIm * wRe;
+        curRe = nextRe;
+      }
+    }
+  }
+  if (inverse) {
+    for (let i = 0; i < n; i++) {
+      re[i]! /= n;
+      im[i]! /= n;
+    }
+  }
 }
 
 /**
- * Detects the sync tone in an audio file (or null if not found). The tone is the
- * same one the room speaker plays, so detecting it in each camera's audio lets
- * the worker align the independently-started recordings.
- *
- * It first finds where the tone sustainedly dominates, then aligns on the rising
- * edge at a fraction of THAT stream's own plateau (interpolated between 1 ms
- * hops). Anchoring to a fraction of the plateau makes the detected instant
- * independent of how loud the tone is at each mic. Also returns quality metrics
- * (rise time, dominance) so the control room can judge how reliable it is.
+ * Detects the sync chirp in an audio file (or null if not found), by matched-
+ * filter cross-correlation with the known sweep. The correlation peak gives the
+ * chirp's arrival time to sub-sample precision; because a sweep is broadband the
+ * peak is sharp and locks onto the direct sound, so it is far more reliable in a
+ * reverberant room than a steady tone's smeared onset. Returns a prominence
+ * (peak vs. the next strongest peak) as a confidence metric.
  */
 export async function detectToneOnset(path: string): Promise<ToneDetection | null> {
   let samples: Float32Array;
@@ -101,62 +136,63 @@ export async function detectToneOnset(path: string): Promise<ToneDetection | nul
   } catch {
     return null;
   }
-  if (samples.length < WINDOW_SAMPLES * 2) return null;
+  const template = generateChirp();
+  const analyzeLen = Math.min(samples.length, ANALYZE_SECONDS * SAMPLE_RATE);
+  if (analyzeLen < template.length * 2) return null;
 
-  // Fine envelope of tone-frequency magnitude and its dominance, per 1 ms hop.
-  const hops = Math.floor((samples.length - WINDOW_SAMPLES) / HOP_SAMPLES) + 1;
-  const mag = new Float64Array(hops);
-  const dom = new Float64Array(hops);
-  for (let h = 0; h < hops; h++) {
-    const start = h * HOP_SAMPLES;
-    let total = 0;
-    for (let i = 0; i < WINDOW_SAMPLES; i++) {
-      const v = samples[start + i]!;
-      total += v * v;
+  let n = 1;
+  while (n < analyzeLen + template.length) n <<= 1;
+
+  const sRe = new Float64Array(n);
+  const sIm = new Float64Array(n);
+  for (let i = 0; i < analyzeLen; i++) sRe[i] = samples[i]!;
+  const tRe = new Float64Array(n);
+  const tIm = new Float64Array(n);
+  for (let i = 0; i < template.length; i++) tRe[i] = template[i]!;
+
+  fft(sRe, sIm, false);
+  fft(tRe, tIm, false);
+  // Cross-correlation = IFFT(S · conj(T)); peak at m where the chirp starts.
+  for (let k = 0; k < n; k++) {
+    const ar = sRe[k]!;
+    const ai = sIm[k]!;
+    const br = tRe[k]!;
+    const bi = tIm[k]!;
+    sRe[k] = ar * br + ai * bi;
+    sIm[k] = ai * br - ar * bi;
+  }
+  fft(sRe, sIm, true);
+
+  const maxLag = analyzeLen - template.length;
+  let peak = -Infinity;
+  let peakIdx = 0;
+  for (let m = 0; m <= maxLag; m++) {
+    if (sRe[m]! > peak) {
+      peak = sRe[m]!;
+      peakIdx = m;
     }
-    const power = toneBinPower(samples, start, WINDOW_SAMPLES);
-    mag[h] = Math.sqrt(Math.max(0, power));
-    dom[h] = total > 1e-7 ? power / (WINDOW_SAMPLES * total) : 0;
+  }
+  if (peak <= 0) return null;
+
+  // Prominence: how much the peak beats the next-strongest peak outside a guard.
+  const guard = Math.round(template.length / 2);
+  let second = 0;
+  for (let m = 0; m <= maxLag; m++) {
+    if (Math.abs(m - peakIdx) <= guard) continue;
+    if (sRe[m]! > second) second = sRe[m]!;
+  }
+  const prominence = Math.max(0, Math.min(1, (peak - second) / peak));
+  if (prominence < MIN_PROMINENCE) return null;
+
+  // Sub-sample peak position via parabolic interpolation.
+  let delta = 0;
+  if (peakIdx > 0 && peakIdx < maxLag) {
+    const y0 = sRe[peakIdx - 1]!;
+    const y1 = sRe[peakIdx]!;
+    const y2 = sRe[peakIdx + 1]!;
+    const denom = y0 - 2 * y1 + y2;
+    if (denom !== 0) delta = (0.5 * (y0 - y2)) / denom;
   }
 
-  // Locate the sustained tone: first hop after which it dominates for SUSTAIN_S.
-  const sustainHops = Math.round((SUSTAIN_S * SAMPLE_RATE) / HOP_SAMPLES);
-  let sustainStart = -1;
-  let run = 0;
-  for (let h = 0; h < hops; h++) {
-    if (dom[h]! >= DOMINANCE_THRESHOLD) {
-      run++;
-      if (run >= sustainHops) {
-        sustainStart = h - run + 1;
-        break;
-      }
-    } else {
-      run = 0;
-    }
-  }
-  if (sustainStart < 0) return null;
-
-  // Plateau magnitude (robust) and the dominance there (detection cleanliness).
-  const plateau = median(mag, sustainStart, Math.min(hops, sustainStart + sustainHops));
-  if (plateau <= 1e-6) return null;
-  const dominance = median(dom, sustainStart, Math.min(hops, sustainStart + sustainHops));
-
-  // Interpolated hop where the rising edge crosses `frac` of the plateau,
-  // scanning back from the plateau. Returns sustainStart if it runs off the start.
-  const risingCross = (frac: number): number => {
-    const level = frac * plateau;
-    for (let h = sustainStart; h > 0; h--) {
-      if (mag[h]! >= level && mag[h - 1]! < level) {
-        const t = (level - mag[h - 1]!) / (mag[h]! - mag[h - 1]!);
-        return h - 1 + t;
-      }
-    }
-    return sustainStart;
-  };
-
-  // Window magnitude reflects energy centred in the window, so add half a window.
-  const hopToS = (hop: number) => (hop * HOP_SAMPLES + WINDOW_SAMPLES / 2) / SAMPLE_RATE;
-  const onsetS = hopToS(risingCross(EDGE_FRACTION));
-  const riseMs = Math.max(0, (hopToS(risingCross(0.9)) - hopToS(risingCross(0.1))) * 1000);
-  return { onsetS, riseMs, dominance };
+  return { onsetS: (peakIdx + delta) / SAMPLE_RATE, riseMs: null, dominance: prominence };
 }

@@ -8,8 +8,9 @@ import {
   MicLevelInputSchema,
   MicSetGainSchema,
   SOCKET_EVENTS,
+  SYNC_CHIRP_END_HZ,
+  SYNC_CHIRP_START_HZ,
   SYNC_TONE_DURATION_MS,
-  SYNC_TONE_FREQUENCY_HZ,
   type OnlineDevice,
   type Role,
 } from '@practiceroom/shared';
@@ -93,7 +94,8 @@ export function setupRealtime(app: FastifyInstance): void {
     clearTimeout(group.timer);
     io.to(deviceRoom(group.speakerId)).emit(SOCKET_EVENTS.syncTone, {
       toneId: randomUUID(),
-      frequency: SYNC_TONE_FREQUENCY_HZ,
+      startHz: SYNC_CHIRP_START_HZ,
+      endHz: SYNC_CHIRP_END_HZ,
       durationMs: SYNC_TONE_DURATION_MS,
     });
     // Tell the control room the tone is playing now.

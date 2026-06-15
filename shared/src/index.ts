@@ -782,19 +782,24 @@ export const SOCKET_EVENTS = {
   syncToneStatus: 'sync:tone-status',
 } as const;
 
-/* ---- Sync tone (multicam alignment via a speaker in the room) ------------- */
+/* ---- Sync marker (multicam alignment via a speaker in the room) ----------- */
 
-// A speaker plays this tone at the start of a multi-device segment; every mic
-// records it, and the worker aligns the streams by detecting it. The clients
-// (browser + pi-agent) and the worker must all agree on these values.
-export const SYNC_TONE_FREQUENCY_HZ = 1000;
-export const SYNC_TONE_DURATION_MS = 2000;
-export const SYNC_TONE_FADE_MS = 50;
+// A speaker plays a short frequency sweep (chirp) at the start of a multi-device
+// segment; every mic records it, and the worker aligns the streams by matched-
+// filter cross-correlation. A sweep is broadband, so its correlation peak is
+// sharp (sub-ms) and locks onto the direct sound — far more reliable in a
+// reverberant room than a steady tone. Clients (browser + pi-agent) and the
+// worker must all agree on these values.
+export const SYNC_CHIRP_START_HZ = 800;
+export const SYNC_CHIRP_END_HZ = 5000;
+export const SYNC_TONE_DURATION_MS = 600; // chirp length
+export const SYNC_TONE_FADE_MS = 10; // anti-click fade in/out
 
-/** server -> speaker device: details of the tone to play. */
+/** server -> speaker device: the sweep to play. */
 export const SyncTonePayloadSchema = z.object({
   toneId: z.string(),
-  frequency: z.number(),
+  startHz: z.number(),
+  endHz: z.number(),
   durationMs: z.number(),
 });
 export type SyncTonePayload = z.infer<typeof SyncTonePayloadSchema>;
