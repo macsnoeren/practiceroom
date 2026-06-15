@@ -70,7 +70,7 @@ function isToday(iso: string): boolean {
 
 export function Regiekamer({ user }: { user: UserDto }) {
   const navigate = useNavigate();
-  const { online, statuses, frames, gains, levels, setGain } = usePresence({
+  const { online, statuses, frames, gains, levels, setGain, syncTone } = usePresence({
     collectFrames: true,
     onRecordingCompleted: useCallback(
       ({ lessonId }: RecordingCompleted) => {
@@ -464,6 +464,23 @@ export function Regiekamer({ user }: { user: UserDto }) {
               )}
             </div>
           </div>
+
+          {syncTone && syncTone.lessonId === activeLessonId && (
+            <div
+              className="card"
+              style={{
+                margin: '0 0 0.75rem',
+                padding: '0.6rem 0.9rem',
+                background: syncTone.phase === 'playing' ? 'var(--ok-bg, #16351f)' : 'var(--warn-bg, #3a2f12)',
+                border: '1px solid var(--border)',
+                fontWeight: 600,
+              }}
+            >
+              {syncTone.phase === 'armed'
+                ? '⏳ Wacht op het startsignaal — begin pas ná de toon te spelen…'
+                : '🔊 Startsignaal klinkt — nu loopt de opname.'}
+            </div>
+          )}
 
           {audioSource && (
             <p className="muted" style={{ marginTop: 0 }}>

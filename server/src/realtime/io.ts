@@ -32,7 +32,10 @@ export interface Presence {
 /** Lets the recording route schedule a sync tone for a group of devices. The
  * tone fires once every device has begun recording (so all capture its onset). */
 export interface SyncCoordinator {
-  arm(groupId: string, info: { deviceIds: string[]; speakerId: string }): void;
+  arm(
+    groupId: string,
+    info: { deviceIds: string[]; speakerId: string; schoolId: string; lessonId: string },
+  ): void;
 }
 
 declare module 'fastify' {
@@ -77,6 +80,8 @@ export function setupRealtime(app: FastifyInstance): void {
   interface ArmedGroup {
     pending: Set<string>;
     speakerId: string;
+    schoolId: string;
+    lessonId: string;
     timer: NodeJS.Timeout;
     fired: boolean;
   }
@@ -91,14 +96,25 @@ export function setupRealtime(app: FastifyInstance): void {
       frequency: SYNC_TONE_FREQUENCY_HZ,
       durationMs: SYNC_TONE_DURATION_MS,
     });
+    // Tell the control room the tone is playing now.
+    io.to(schoolRoom(group.schoolId)).emit(SOCKET_EVENTS.syncToneStatus, {
+      lessonId: group.lessonId,
+      phase: 'playing',
+      durationMs: SYNC_TONE_DURATION_MS,
+    });
   }
 
-  function armSyncTone(groupId: string, info: { deviceIds: string[]; speakerId: string }): void {
+  function armSyncTone(
+    groupId: string,
+    info: { deviceIds: string[]; speakerId: string; schoolId: string; lessonId: string },
+  ): void {
     const existing = armedGroups.get(groupId);
     if (existing) clearTimeout(existing.timer);
     const group: ArmedGroup = {
       pending: new Set(info.deviceIds),
       speakerId: info.speakerId,
+      schoolId: info.schoolId,
+      lessonId: info.lessonId,
       fired: false,
       timer: setTimeout(() => {
         fireTone(group);
@@ -106,6 +122,11 @@ export function setupRealtime(app: FastifyInstance): void {
       }, SYNC_TONE_ARM_TIMEOUT_MS),
     };
     armedGroups.set(groupId, group);
+    // Tell the control room a tone is pending so it can ask the operator to wait.
+    io.to(schoolRoom(info.schoolId)).emit(SOCKET_EVENTS.syncToneStatus, {
+      lessonId: info.lessonId,
+      phase: 'armed',
+    });
   }
 
   // A device started recording: clear it from any armed group; once a group has

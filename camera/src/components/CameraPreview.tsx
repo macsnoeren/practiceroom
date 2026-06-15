@@ -102,9 +102,19 @@ export function CameraPreview({
     setError(null);
     stopStream();
     try {
+      // Disable the browser's default voice processing: it mangles music and
+      // actively strips a steady tone (echo cancellation removes sound the device
+      // also plays, noise suppression treats a pure tone as noise). We need the
+      // raw mic for both recording quality and reliable sync-tone detection.
+      const audioConstraints: MediaTrackConstraints = {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+        ...(audioId ? { deviceId: { exact: audioId } } : {}),
+      };
       const stream = await navigator.mediaDevices.getUserMedia({
         video: wantsVideo ? (videoId ? { deviceId: { exact: videoId } } : true) : false,
-        audio: wantsAudio ? (audioId ? { deviceId: { exact: audioId } } : true) : false,
+        audio: wantsAudio ? audioConstraints : false,
       });
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;

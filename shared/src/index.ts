@@ -773,6 +773,8 @@ export const SOCKET_EVENTS = {
   recordingCompleted: 'recording:completed',
   /** server -> speaker device: play the sync tone now (start signal + marker). */
   syncTone: 'sync:tone',
+  /** server -> staff: the sync tone is pending ('armed') or playing now. */
+  syncToneStatus: 'sync:tone-status',
 } as const;
 
 /* ---- Sync tone (multicam alignment via a speaker in the room) ------------- */
@@ -791,6 +793,15 @@ export const SyncTonePayloadSchema = z.object({
   durationMs: z.number(),
 });
 export type SyncTonePayload = z.infer<typeof SyncTonePayloadSchema>;
+
+/** server -> staff: where a lesson's start tone is in its lifecycle, so the
+ * control room can tell the operator to wait for it. */
+export const SyncToneStatusSchema = z.object({
+  lessonId: z.string(),
+  phase: z.enum(['armed', 'playing']),
+  durationMs: z.number().optional(),
+});
+export type SyncToneStatus = z.infer<typeof SyncToneStatusSchema>;
 
 /** A 0–1 microphone level for the control room's live meter. */
 const levelField = z.number().min(0).max(1);

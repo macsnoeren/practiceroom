@@ -591,6 +591,8 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
           app.syncCoordinator.arm(segmentGroupId, {
             deviceIds: groupDeviceIds,
             speakerId: speaker.id,
+            schoolId: me.schoolId,
+            lessonId: id,
           });
         }
       }
