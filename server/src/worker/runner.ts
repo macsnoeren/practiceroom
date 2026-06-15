@@ -68,6 +68,8 @@ function ffmpegPath(): string {
 /** Runs ffmpeg, resolving on success and rejecting with stderr on failure. */
 export function runFfmpeg(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
+    // Log the exact command so alignment/filter issues can be inspected.
+    console.info('[worker] ffmpeg', args.join(' '));
     const proc = spawn(ffmpegPath(), args, { stdio: ['ignore', 'ignore', 'pipe'] });
     let stderr = '';
     proc.stderr.on('data', (chunk: Buffer) => {

@@ -73,8 +73,8 @@ export function buildMuxVideoOverAudioArgs(
     '-i', video.input,
     '-i', audio.input,
     '-filter_complex',
-    `[0:v]${trimPrefix(video.skip)}setpts=PTS-STARTPTS[v];` +
-      `[1:a]${atrimPrefix(audio.skip)}aresample=async=1,asetpts=PTS-STARTPTS[a]`,
+    `[0:v]${videoAlignChain(video.skip)}[v];` +
+      `[1:a]${audioAlignChain(audio.skip)},aresample=async=1[a]`,
     '-map', '[v]',
     '-map', '[a]',
     '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
@@ -129,17 +129,29 @@ export interface TimedInput {
   skip?: number;
 }
 
-/** A `trim=start=…,` filter prefix that drops the first `skip` seconds, or '' for
- * no trim. We trim INSIDE the filter graph (decode-and-drop) rather than with a
- * `-ss` input seek, because the recordings (MediaRecorder WebM, piped Matroska)
- * have no seek index, so `-ss` is unreliable and often a no-op on them. */
-function trimPrefix(skip: number | undefined): string {
-  return skip && skip > 0 ? `trim=start=${skip.toFixed(3)},` : '';
+/**
+ * Video filter prefix (ending in a comma) that zeroes the timeline and, when a
+ * `skip` is given, trims the first `skip` seconds off the front.
+ *
+ * The leading `setpts=PTS-STARTPTS` is essential: these recordings (MediaRecorder
+ * WebM, piped Matroska) can have video timestamps that don't start at 0, so a
+ * bare `trim=start=N` would cut from the wrong origin (or, if the first PTS is
+ * already past N, cut nothing). Zeroing first makes `trim` cut exactly N seconds
+ * from the true start; a second zeroing rebases the kept part to 0. We trim in
+ * the filter graph (decode-and-drop) rather than via a `-ss` seek, which is
+ * unreliable on these index-less files.
+ */
+function videoAlignChain(skip: number | undefined): string {
+  return skip && skip > 0
+    ? `setpts=PTS-STARTPTS,trim=start=${skip.toFixed(3)},setpts=PTS-STARTPTS`
+    : `setpts=PTS-STARTPTS`;
 }
 
-/** Like trimPrefix but for an audio stream. */
-function atrimPrefix(skip: number | undefined): string {
-  return skip && skip > 0 ? `atrim=start=${skip.toFixed(3)},` : '';
+/** Audio counterpart of videoAlignChain (no trailing comma). */
+function audioAlignChain(skip: number | undefined): string {
+  return skip && skip > 0
+    ? `asetpts=PTS-STARTPTS,atrim=start=${skip.toFixed(3)},asetpts=PTS-STARTPTS`
+    : `asetpts=PTS-STARTPTS`;
 }
 
 /** overlay x:y expression placing an inset in the given corner with a margin. */
@@ -187,15 +199,15 @@ export function buildPipCompositeArgs(
   else args.push('-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=48000');
   const audioIdx = pips.length + 1;
 
-  // Trim each video layer to the common window, then zero its start and force the
-  // constant frame rate so the layers stay locked together.
-  const filters: string[] = [`[0:v]${trimPrefix(main.skip)}setpts=PTS-STARTPTS,${SCALE_PAD}[base]`];
+  // Trim each video layer to the common window (from the true start), then force
+  // the constant frame rate so the layers stay locked together.
+  const filters: string[] = [`[0:v]${videoAlignChain(main.skip)},${SCALE_PAD}[base]`];
   let last = 'base';
   pips.forEach((pip, i) => {
     const inputIdx = i + 1; // main is input 0
     const width = Math.max(2, Math.round(COMPOSITE_WIDTH * pip.scale));
     filters.push(
-      `[${inputIdx}:v]${trimPrefix(pip.skip)}setpts=PTS-STARTPTS,scale=${width}:-2,setsar=1,fps=${COMPOSITE_FPS}[p${i}]`,
+      `[${inputIdx}:v]${videoAlignChain(pip.skip)},scale=${width}:-2,setsar=1,fps=${COMPOSITE_FPS}[p${i}]`,
     );
     const outLabel = i === pips.length - 1 ? 'v' : `t${i}`;
     filters.push(`[${last}][p${i}]overlay=${pipOverlayXY(pip.position)}:shortest=1[${outLabel}]`);
@@ -204,9 +216,9 @@ export function buildPipCompositeArgs(
   const videoLabel = pips.length > 0 ? 'v' : 'base';
 
   // Audio bed: trim to the same window, reset to zero and resample to fill gaps.
-  // (A synthesised silent source needs no trim.)
+  // (A synthesised silent source has skip 0, so it is only zeroed/resampled.)
   filters.push(
-    `[${audioIdx}:a]${audio ? atrimPrefix(audio.skip) : ''}aresample=async=1:first_pts=0,asetpts=PTS-STARTPTS[a]`,
+    `[${audioIdx}:a]${audio ? audioAlignChain(audio.skip) : 'asetpts=PTS-STARTPTS'},aresample=async=1:first_pts=0,asetpts=PTS-STARTPTS[a]`,
   );
 
   args.push(
