@@ -10,7 +10,7 @@ import { env } from '../env.js';
 
 // 16 kHz captures the whole sweep (up to 5 kHz) for a sharp correlation peak.
 const SAMPLE_RATE = 16000;
-const ANALYZE_SECONDS = 12; // the chirp plays within the first few seconds
+const ANALYZE_SECONDS = 15; // the chirp plays within the first several seconds
 // Minimum peak prominence (0..1) to accept a detection; below this we treat the
 // chirp as "not found" and fall back to duration alignment.
 const MIN_PROMINENCE = 0.15;
@@ -58,22 +58,31 @@ function decodePcm(path: string): Promise<Float32Array> {
   });
 }
 
-/** The same linear chirp the speaker plays, generated for matched filtering. */
-function generateChirp(): Float64Array {
+/**
+ * The ANALYTIC version of the linear chirp the speaker plays (cos + j·sin), for
+ * matched filtering. Correlating the recording with the complex template and
+ * taking the magnitude makes the detection independent of the recorded chirp's
+ * carrier phase — a real template would give a phase-dependent (sometimes near-
+ * zero) peak.
+ */
+function generateTemplate(): { re: Float64Array; im: Float64Array; length: number } {
   const length = Math.round((SAMPLE_RATE * SYNC_TONE_DURATION_MS) / 1000);
   const t1 = SYNC_TONE_DURATION_MS / 1000;
   const f0 = SYNC_CHIRP_START_HZ;
   const halfRate = (SYNC_CHIRP_END_HZ - f0) / (2 * t1); // 0.5 * sweep rate
   const fade = Math.max(1, Math.round((SAMPLE_RATE * SYNC_TONE_FADE_MS) / 1000));
-  const out = new Float64Array(length);
+  const re = new Float64Array(length);
+  const im = new Float64Array(length);
   for (let n = 0; n < length; n++) {
     const t = n / SAMPLE_RATE;
-    let a = Math.sin(2 * Math.PI * (f0 * t + halfRate * t * t));
-    if (n < fade) a *= n / fade;
-    else if (n > length - fade) a *= (length - n) / fade;
-    out[n] = a;
+    const phase = 2 * Math.PI * (f0 * t + halfRate * t * t);
+    let w = 1;
+    if (n < fade) w = n / fade;
+    else if (n > length - fade) w = (length - n) / fade;
+    re[n] = Math.cos(phase) * w;
+    im[n] = Math.sin(phase) * w;
   }
-  return out;
+  return { re, im, length };
 }
 
 /** In-place iterative radix-2 Cooley–Tukey FFT (length must be a power of two). */
@@ -136,7 +145,7 @@ export async function detectToneOnset(path: string): Promise<ToneDetection | nul
   } catch {
     return null;
   }
-  const template = generateChirp();
+  const template = generateTemplate();
   const analyzeLen = Math.min(samples.length, ANALYZE_SECONDS * SAMPLE_RATE);
   if (analyzeLen < template.length * 2) return null;
 
@@ -148,11 +157,15 @@ export async function detectToneOnset(path: string): Promise<ToneDetection | nul
   for (let i = 0; i < analyzeLen; i++) sRe[i] = samples[i]!;
   const tRe = new Float64Array(n);
   const tIm = new Float64Array(n);
-  for (let i = 0; i < template.length; i++) tRe[i] = template[i]!;
+  for (let i = 0; i < template.length; i++) {
+    tRe[i] = template.re[i]!;
+    tIm[i] = template.im[i]!;
+  }
 
   fft(sRe, sIm, false);
   fft(tRe, tIm, false);
-  // Cross-correlation = IFFT(S · conj(T)); peak at m where the chirp starts.
+  // Cross-correlation = IFFT(S · conj(T)) with a COMPLEX (analytic) template;
+  // its magnitude peaks at the chirp's arrival regardless of carrier phase.
   for (let k = 0; k < n; k++) {
     const ar = sRe[k]!;
     const ai = sIm[k]!;
@@ -164,11 +177,13 @@ export async function detectToneOnset(path: string): Promise<ToneDetection | nul
   fft(sRe, sIm, true);
 
   const maxLag = analyzeLen - template.length;
+  const mag = (m: number) => Math.hypot(sRe[m]!, sIm[m]!);
   let peak = -Infinity;
   let peakIdx = 0;
   for (let m = 0; m <= maxLag; m++) {
-    if (sRe[m]! > peak) {
-      peak = sRe[m]!;
+    const v = mag(m);
+    if (v > peak) {
+      peak = v;
       peakIdx = m;
     }
   }
@@ -179,17 +194,18 @@ export async function detectToneOnset(path: string): Promise<ToneDetection | nul
   let second = 0;
   for (let m = 0; m <= maxLag; m++) {
     if (Math.abs(m - peakIdx) <= guard) continue;
-    if (sRe[m]! > second) second = sRe[m]!;
+    const v = mag(m);
+    if (v > second) second = v;
   }
   const prominence = Math.max(0, Math.min(1, (peak - second) / peak));
   if (prominence < MIN_PROMINENCE) return null;
 
-  // Sub-sample peak position via parabolic interpolation.
+  // Sub-sample peak position via parabolic interpolation on the magnitude.
   let delta = 0;
   if (peakIdx > 0 && peakIdx < maxLag) {
-    const y0 = sRe[peakIdx - 1]!;
-    const y1 = sRe[peakIdx]!;
-    const y2 = sRe[peakIdx + 1]!;
+    const y0 = mag(peakIdx - 1);
+    const y1 = peak;
+    const y2 = mag(peakIdx + 1);
     const denom = y0 - 2 * y1 + y2;
     if (denom !== 0) delta = (0.5 * (y0 - y2)) / denom;
   }
