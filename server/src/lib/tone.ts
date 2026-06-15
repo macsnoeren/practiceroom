@@ -72,19 +72,29 @@ function median(arr: Float64Array, from: number, to: number): number {
   return slice.length % 2 ? slice[mid]! : (slice[mid - 1]! + slice[mid]!) / 2;
 }
 
+/** A detected sync tone, with quality metrics for diagnostics. */
+export interface ToneDetection {
+  /** Start time (seconds): the rising edge at 50% of the tone's own plateau. */
+  onsetS: number;
+  /** 10%→90% rise time (ms). Small = sharp edge = precise; large = smeared
+   * (reverb/noise) = the onset — and thus the alignment — is less reliable. */
+  riseMs: number;
+  /** Plateau dominance (0…~0.5): how cleanly the tone stands out (higher better). */
+  dominance: number;
+}
+
 /**
- * Returns the start time (seconds) of the sync tone in an audio file, or null if
- * it is not found. The tone is the same one the room speaker plays, so detecting
- * it in each camera's audio lets the worker align the independently-started
- * recordings frame-exactly.
+ * Detects the sync tone in an audio file (or null if not found). The tone is the
+ * same one the room speaker plays, so detecting it in each camera's audio lets
+ * the worker align the independently-started recordings.
  *
  * It first finds where the tone sustainedly dominates, then aligns on the rising
  * edge at a fraction of THAT stream's own plateau (interpolated between 1 ms
  * hops). Anchoring to a fraction of the plateau makes the detected instant
- * independent of how loud the tone is at each mic, so all streams land on the
- * same acoustic moment instead of a volume-dependent threshold crossing.
+ * independent of how loud the tone is at each mic. Also returns quality metrics
+ * (rise time, dominance) so the control room can judge how reliable it is.
  */
-export async function detectToneOnset(path: string): Promise<number | null> {
+export async function detectToneOnset(path: string): Promise<ToneDetection | null> {
   let samples: Float32Array;
   try {
     samples = await decodePcm(path);
@@ -126,23 +136,27 @@ export async function detectToneOnset(path: string): Promise<number | null> {
   }
   if (sustainStart < 0) return null;
 
-  // Plateau magnitude (robust) and the edge level to align on.
+  // Plateau magnitude (robust) and the dominance there (detection cleanliness).
   const plateau = median(mag, sustainStart, Math.min(hops, sustainStart + sustainHops));
   if (plateau <= 1e-6) return null;
-  const edge = EDGE_FRACTION * plateau;
+  const dominance = median(dom, sustainStart, Math.min(hops, sustainStart + sustainHops));
 
-  // Walk back from the plateau to the rising edge's crossing of `edge`, then
-  // linearly interpolate between the two straddling hops for sub-hop precision.
-  let crossHop = sustainStart;
-  for (let h = sustainStart; h > 0; h--) {
-    if (mag[h]! >= edge && mag[h - 1]! < edge) {
-      const frac = (edge - mag[h - 1]!) / (mag[h]! - mag[h - 1]!);
-      crossHop = h - 1 + frac;
-      break;
+  // Interpolated hop where the rising edge crosses `frac` of the plateau,
+  // scanning back from the plateau. Returns sustainStart if it runs off the start.
+  const risingCross = (frac: number): number => {
+    const level = frac * plateau;
+    for (let h = sustainStart; h > 0; h--) {
+      if (mag[h]! >= level && mag[h - 1]! < level) {
+        const t = (level - mag[h - 1]!) / (mag[h]! - mag[h - 1]!);
+        return h - 1 + t;
+      }
     }
-  }
+    return sustainStart;
+  };
 
   // Window magnitude reflects energy centred in the window, so add half a window.
-  const onsetSamples = crossHop * HOP_SAMPLES + WINDOW_SAMPLES / 2;
-  return onsetSamples / SAMPLE_RATE;
+  const hopToS = (hop: number) => (hop * HOP_SAMPLES + WINDOW_SAMPLES / 2) / SAMPLE_RATE;
+  const onsetS = hopToS(risingCross(EDGE_FRACTION));
+  const riseMs = Math.max(0, (hopToS(risingCross(0.9)) - hopToS(risingCross(0.1))) * 1000);
+  return { onsetS, riseMs, dominance };
 }

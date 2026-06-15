@@ -217,6 +217,18 @@ export function Regiekamer({ user }: { user: UserDto }) {
     if (pending !== undefined && liveActiveKey === pending) setPending(undefined);
   }, [liveActiveKey, pending]);
 
+  // While the combined video is (re)building, poll so the result shows as soon as
+  // it is ready — handy for reviewing an offset change right away.
+  const compositeStatus = activeLessonDetail?.composite?.status;
+  useEffect(() => {
+    if (!activeLessonId) return;
+    if (compositeStatus !== 'queued' && compositeStatus !== 'processing') return;
+    const t = setInterval(() => {
+      void loadDetail(activeLessonId);
+    }, 3000);
+    return () => clearInterval(t);
+  }, [activeLessonId, compositeStatus, loadDetail]);
+
   const activeKey = pending !== undefined ? pending : liveActiveKey;
   const isRecording = activeKey != null;
   const deviceKey = (id: string) => `dev:${id}`;
@@ -357,6 +369,17 @@ export function Regiekamer({ user }: { user: UserDto }) {
       await loadDetail(activeLessonId);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Afronden mislukt');
+    }
+  }
+
+  async function rebuildComposite() {
+    if (!activeLessonId) return;
+    setError(null);
+    try {
+      await api.rebuildComposite(activeLessonId);
+      await loadDetail(activeLessonId);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Opnieuw samenstellen mislukt');
     }
   }
 
@@ -815,6 +838,19 @@ export function Regiekamer({ user }: { user: UserDto }) {
                 sync={activeLessonDetail.composite?.sync ?? null}
                 deviceName={(id) => allDevices.find((d) => d.id === id)?.name ?? id}
               />
+              <div className="recording-buttons" style={{ marginTop: '1rem' }}>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => void rebuildComposite()}
+                  disabled={compositeStatus === 'queued' || compositeStatus === 'processing'}
+                  title="Bouw de samengestelde video opnieuw — bijv. na een video-offset-aanpassing bij een camera"
+                >
+                  {compositeStatus === 'queued' || compositeStatus === 'processing'
+                    ? 'Bezig met samenstellen…'
+                    : '🔁 Video opnieuw samenstellen'}
+                </button>
+              </div>
               {activeLessonDetail.composite?.status === 'completed' && (
                 <div className="recording-buttons" style={{ marginTop: '1rem', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}>
                   <SaveToLibraryInline lessonId={activeLessonId} />

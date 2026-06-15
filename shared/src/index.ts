@@ -708,6 +708,11 @@ export const SyncStreamReportSchema = z.object({
   durationS: z.number().nullable(),
   toneOnsetS: z.number().nullable(), // detected sync-tone start, or null
   skipS: z.number(), // seconds trimmed from the front to align
+  // Detection quality (optional; absent on older reports). riseMs = 10→90% edge
+  // rise time (smaller is sharper/more reliable); dominance = 0…~0.5 (higher is
+  // a cleaner tone vs background).
+  toneRiseMs: z.number().nullable().optional(),
+  toneDominance: z.number().nullable().optional(),
 });
 export type SyncStreamReport = z.infer<typeof SyncStreamReportSchema>;
 

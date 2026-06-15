@@ -15,7 +15,7 @@ import {
   type PipInput,
 } from '../lib/composite.js';
 import { probeDuration, probeStreams } from '../lib/probe.js';
-import { detectToneOnset } from '../lib/tone.js';
+import { detectToneOnset, type ToneDetection } from '../lib/tone.js';
 import {
   SYNC_TONE_DURATION_MS,
   type SyncSegmentReport,
@@ -124,6 +124,8 @@ interface GroupAlignment {
   skips: Map<string, number>;
   onset: Map<string, number | null>;
   duration: Map<string, number | null>;
+  riseMs: Map<string, number | null>;
+  dominance: Map<string, number | null>;
 }
 
 /**
@@ -137,30 +139,42 @@ async function computeGroupAlignment(paths: string[], usedSyncTone: boolean): Pr
   const skips = new Map<string, number>();
   const onset = new Map<string, number | null>();
   const duration = new Map<string, number | null>();
+  const riseMs = new Map<string, number | null>();
+  const dominance = new Map<string, number | null>();
+  for (const p of paths) {
+    onset.set(p, null);
+    riseMs.set(p, null);
+    dominance.set(p, null);
+  }
 
   // Probe durations always — used for the fallback and shown in diagnostics.
   const durations = await Promise.all(paths.map((p) => probeDuration(p)));
   paths.forEach((p, i) => duration.set(p, durations[i]! > 0 ? round3(durations[i]!) : null));
 
   if (usedSyncTone) {
-    const onsets = await Promise.all(paths.map((p) => detectToneOnset(p)));
-    paths.forEach((p, i) => onset.set(p, onsets[i] !== null ? round3(onsets[i]!) : null));
-    if (onsets.every((o) => o !== null)) {
+    const detections = await Promise.all(paths.map((p) => detectToneOnset(p)));
+    paths.forEach((p, i) => {
+      const d = detections[i];
+      if (d) {
+        onset.set(p, round3(d.onsetS));
+        riseMs.set(p, Math.round(d.riseMs));
+        dominance.set(p, round3(d.dominance));
+      }
+    });
+    if (detections.every((d) => d !== null)) {
       const toneEnd = SYNC_TONE_DURATION_MS / 1000;
-      paths.forEach((p, i) => skips.set(p, round3((onsets[i] as number) + toneEnd)));
-      return { method: 'tone', skips, onset, duration };
+      paths.forEach((p, i) => skips.set(p, round3((detections[i] as ToneDetection).onsetS + toneEnd)));
+      return { method: 'tone', skips, onset, duration, riseMs, dominance };
     }
-  } else {
-    paths.forEach((p) => onset.set(p, null));
   }
 
   if (durations.every((d) => d > 0)) {
     const minD = Math.min(...durations);
     paths.forEach((p, i) => skips.set(p, round3(Math.max(0, durations[i]! - minD))));
-    return { method: 'duration', skips, onset, duration };
+    return { method: 'duration', skips, onset, duration, riseMs, dominance };
   }
   paths.forEach((p) => skips.set(p, 0));
-  return { method: 'none', skips, onset, duration };
+  return { method: 'none', skips, onset, duration, riseMs, dominance };
 }
 
 /** Prints a readable per-segment sync summary to the worker console. */
@@ -192,6 +206,8 @@ function streamReport(
     durationS: align.duration.get(path) ?? null,
     toneOnsetS: align.onset.get(path) ?? null,
     skipS: round3(skipS),
+    toneRiseMs: align.riseMs.get(path) ?? null,
+    toneDominance: align.dominance.get(path) ?? null,
   };
 }
 

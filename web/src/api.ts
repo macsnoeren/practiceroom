@@ -326,6 +326,10 @@ export const api = {
     request(`/api/lessons/${lessonId}/recording/finish`, CompositeVideoDtoSchema, {
       method: 'POST',
     }),
+  rebuildComposite: (lessonId: string) =>
+    request(`/api/lessons/${lessonId}/composite/rebuild`, CompositeVideoDtoSchema, {
+      method: 'POST',
+    }),
   deleteRecording: (recordingId: string) =>
     requestVoid(`/api/recordings/${recordingId}`, { method: 'DELETE' }),
   getPlaybackUrl: (recordingId: string) =>

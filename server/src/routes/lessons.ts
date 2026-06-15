@@ -641,6 +641,33 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  // Re-run the composite worker for a finished lesson (e.g. after tweaking a
+  // camera's video offset) without changing its recordings, so the result can be
+  // reviewed right away.
+  app.post(
+    '/api/lessons/:id/composite/rebuild',
+    { preHandler: requireRole('admin', 'teacher') },
+    async (request) => {
+      const me = requireAuth(request);
+      const { id } = request.params as IdParam;
+      const lesson = await prisma.lesson.findFirst({ where: { id, schoolId: me.schoolId } });
+      if (!lesson) throw notFound('Les niet gevonden');
+      if (!canManageLesson(me, lesson)) throw forbidden();
+
+      const completed = await prisma.recording.count({
+        where: { lessonId: id, status: 'completed' },
+      });
+      if (completed === 0) throw badRequest('Geen voltooide opnames om samen te stellen');
+
+      const composite = await prisma.compositeVideo.upsert({
+        where: { lessonId: id },
+        create: { lessonId: id, status: 'queued' },
+        update: { status: 'queued', error: null, completedAt: null },
+      });
+      return toCompositeVideoDto(composite);
+    },
+  );
+
   /* ---- Composite (combined lesson video) playback -------------------------- */
 
   app.get('/api/lessons/:id/composite/playback-url', async (request) => {
