@@ -29,6 +29,7 @@ import {
   type CreateLibraryItemInput,
   type CreateMaterialInput,
   type CreateUserInput,
+  type DeviceKind,
   type BrandingSlot,
   type SaveFromLessonInput,
   type SiteAdminSetupInput,
@@ -204,10 +205,10 @@ export const api = {
     request('/api/auth/2fa/disable', OkSchema, { method: 'POST', body: JSON.stringify({ code }) }),
 
   listDevices: () => request('/api/devices', z.array(DeviceDtoSchema)),
-  createDevice: (name: string) =>
+  createDevice: (name: string, kind: DeviceKind = 'camera') =>
     request('/api/devices', CreateDeviceResultSchema, {
       method: 'POST',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, kind }),
     }),
   updateDevice: (id: string, input: UpdateDeviceInput) =>
     request(`/api/devices/${id}`, DeviceDtoSchema, {

@@ -36,12 +36,12 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
     { preHandler: requireRole('admin', 'teacher') },
     async (request, reply) => {
       const me = requireAuth(request);
-      const { name } = CreateDeviceSchema.parse(request.body);
+      const { name, kind } = CreateDeviceSchema.parse(request.body);
 
       const pairingCode = await generateUniquePairingCode();
       const pairingExpiresAt = new Date(Date.now() + PAIRING_TTL_MS);
       const device = await prisma.device.create({
-        data: { schoolId: me.schoolId, name, pairingCode, pairingExpiresAt },
+        data: { schoolId: me.schoolId, name, kind, pairingCode, pairingExpiresAt },
       });
 
       return reply.code(201).send({
@@ -191,6 +191,6 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/devices/me', async (request) => {
     const device = await authenticateDevice(request);
-    return { id: device.id, name: device.name, schoolId: device.schoolId };
+    return { id: device.id, name: device.name, schoolId: device.schoolId, kind: device.kind };
   });
 }

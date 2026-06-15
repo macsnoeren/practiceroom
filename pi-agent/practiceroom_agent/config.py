@@ -54,9 +54,27 @@ class CameraConfig:
 
 
 @dataclass
+class SpeakerConfig:
+    """One configured speaker (audio output). Plays the room's sync tone on
+    command. `token`/`device_id` are filled in after pairing."""
+
+    local_id: str  # stable key (the ALSA output selector, e.g. "default")
+    alsa_device: str = ""  # ALSA output ("" = default)
+    label: str = ""
+    token: str | None = None
+    device_id: str | None = None
+    device_name: str | None = None
+
+    @property
+    def paired(self) -> bool:
+        return bool(self.token and self.device_id)
+
+
+@dataclass
 class AgentConfig:
     server_url: str = ""
     cameras: dict[str, CameraConfig] = field(default_factory=dict)
+    speakers: dict[str, SpeakerConfig] = field(default_factory=dict)
 
 
 class ConfigStore:
@@ -84,13 +102,20 @@ class ConfigStore:
             cid: CameraConfig(**{**cam, "local_id": cid})
             for cid, cam in raw.get("cameras", {}).items()
         }
-        return AgentConfig(server_url=raw.get("server_url", ""), cameras=cameras)
+        speakers = {
+            sid: SpeakerConfig(**{**spk, "local_id": sid})
+            for sid, spk in raw.get("speakers", {}).items()
+        }
+        return AgentConfig(
+            server_url=raw.get("server_url", ""), cameras=cameras, speakers=speakers
+        )
 
     def _save_locked(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         data = {
             "server_url": self._config.server_url,
             "cameras": {cid: asdict(cam) for cid, cam in self._config.cameras.items()},
+            "speakers": {sid: asdict(spk) for sid, spk in self._config.speakers.items()},
         }
         # Write atomically so a crash mid-write can't truncate the config.
         tmp = self._path.with_suffix(".json.tmp")
@@ -110,12 +135,18 @@ class ConfigStore:
             return AgentConfig(
                 server_url=self._config.server_url,
                 cameras={cid: CameraConfig(**asdict(cam)) for cid, cam in self._config.cameras.items()},
+                speakers={sid: SpeakerConfig(**asdict(spk)) for sid, spk in self._config.speakers.items()},
             )
 
     def get_camera(self, local_id: str) -> CameraConfig | None:
         with self._lock:
             cam = self._config.cameras.get(local_id)
             return CameraConfig(**asdict(cam)) if cam else None
+
+    def get_speaker(self, local_id: str) -> SpeakerConfig | None:
+        with self._lock:
+            spk = self._config.speakers.get(local_id)
+            return SpeakerConfig(**asdict(spk)) if spk else None
 
     # -- mutations -----------------------------------------------------------
 
@@ -142,4 +173,26 @@ class ConfigStore:
     def remove_camera(self, local_id: str) -> None:
         with self._lock:
             self._config.cameras.pop(local_id, None)
+            self._save_locked()
+
+    # -- speaker mutations ---------------------------------------------------
+
+    def upsert_speaker(self, spk: SpeakerConfig) -> None:
+        with self._lock:
+            self._config.speakers[spk.local_id] = spk
+            self._save_locked()
+
+    def update_speaker(self, local_id: str, **changes: object) -> SpeakerConfig | None:
+        with self._lock:
+            spk = self._config.speakers.get(local_id)
+            if not spk:
+                return None
+            for key, value in changes.items():
+                setattr(spk, key, value)
+            self._save_locked()
+            return SpeakerConfig(**asdict(spk))
+
+    def remove_speaker(self, local_id: str) -> None:
+        with self._lock:
+            self._config.speakers.pop(local_id, None)
             self._save_locked()

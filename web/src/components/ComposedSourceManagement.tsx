@@ -144,11 +144,13 @@ function SourceForm({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // Cameras of the chosen room (the audio source is not a video camera).
-  const roomCameras = devices.filter((d) => d.roomId === roomId && !d.isAudioSource);
+  // Cameras of the chosen room. The audio source is included too: one device can
+  // be both the room's microphone and a camera in the composition.
+  const roomCameras = devices.filter((d) => d.roomId === roomId);
   // Cameras still available for an inset (not the main, not already chosen).
   const usedIds = new Set([mainDeviceId, ...insets.map((i) => i.deviceId)]);
   const availableForInset = roomCameras.filter((d) => !usedIds.has(d.id));
+  const camLabel = (d: DeviceDto) => (d.isAudioSource ? `${d.name} 🎙` : d.name);
 
   function addInset() {
     const next = availableForInset[0];
@@ -228,7 +230,7 @@ function SourceForm({
         <option value="">— kies —</option>
         {roomCameras.map((d) => (
           <option key={d.id} value={d.id}>
-            {d.name}
+            {camLabel(d)}
           </option>
         ))}
       </select>
@@ -250,7 +252,7 @@ function SourceForm({
                 .filter((d) => d.id === inset.deviceId || !usedIds.has(d.id))
                 .map((d) => (
                   <option key={d.id} value={d.id}>
-                    {d.name}
+                    {camLabel(d)}
                   </option>
                 ))}
             </select>

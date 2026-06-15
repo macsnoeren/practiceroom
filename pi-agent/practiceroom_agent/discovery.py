@@ -83,6 +83,25 @@ def list_video_devices() -> list[VideoDevice]:
     return devices
 
 
+def list_audio_outputs() -> list[AudioDevice]:
+    """List ALSA playback devices via `aplay -l`, always offering the default."""
+    devices: list[AudioDevice] = [AudioDevice(alsa="default", name="Standaard uitvoer")]
+    if _fake_count():
+        return devices
+
+    listing = _run(["aplay", "-l"])
+    pattern = re.compile(r"card (\d+): (\S+).*?device (\d+): (.+?)(?:\s*\[|$)")
+    for line in listing.splitlines():
+        m = pattern.search(line)
+        if not m:
+            continue
+        card, card_name, device, dev_name = m.group(1), m.group(2), m.group(3), m.group(4)
+        devices.append(
+            AudioDevice(alsa=f"plughw:{card},{device}", name=f"{card_name} — {dev_name.strip()}")
+        )
+    return devices
+
+
 def list_audio_devices() -> list[AudioDevice]:
     """List ALSA capture devices via `arecord -l` (or a synthetic test mic)."""
     if _fake_count():

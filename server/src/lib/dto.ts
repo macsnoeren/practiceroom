@@ -127,6 +127,7 @@ export function toDeviceDto(device: Device): DeviceDto {
     id: device.id,
     schoolId: device.schoolId,
     name: device.name,
+    kind: device.kind as DeviceDto['kind'],
     roomId: device.roomId,
     isAudioSource: device.isAudioSource,
     paired: device.tokenHash !== null,

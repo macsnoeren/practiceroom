@@ -174,6 +174,9 @@ model Device {
   id               String    @id @default(cuid())
   schoolId         String
   name             String
+  // 'camera' (captures video/audio) or 'speaker' (plays the room's sync tone on
+  // command). Both pair and connect over the same device protocol.
+  kind             String    @default("camera")
   // The room this device is installed in. Cameras of a room are shown together
   // in the control room; one device per room may be marked the audio source,
   // whose sound is laid under every video segment recorded in that room.
@@ -269,6 +272,9 @@ model Recording {
   // audio-source segment whose sound the worker lays under the paired video.
   segmentGroupId String?
   isAudioTrack   Boolean   @default(false)
+  // True when a sync tone was played for this segment's group, so the worker
+  // aligns the members by detecting that tone in each track.
+  syncTone       Boolean   @default(false)
   // Layout within a composed source: 'main' (full frame) or 'pip' (corner inset
   // at `layoutPosition`, width `layoutScale` of the frame). Null for a plain
   // single-camera segment.

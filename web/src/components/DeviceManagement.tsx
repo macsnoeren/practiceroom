@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { CreateDeviceSchema, type DeviceDto, type RoomDto } from '@practiceroom/shared';
+import { CreateDeviceSchema, type DeviceDto, type DeviceKind, type RoomDto } from '@practiceroom/shared';
 import { ApiError, api } from '../api.js';
 import { usePresence } from '../usePresence.js';
 import { Modal } from './Modal.js';
@@ -139,7 +139,10 @@ export function DeviceManagement() {
               const state = statuses[d.id];
               return (
                 <tr key={d.id}>
-                  <td>{d.name}</td>
+                  <td>
+                    {d.name}{' '}
+                    {d.kind === 'speaker' && <span className="tag" title="Speaker">🔊 speaker</span>}
+                  </td>
                   <td>
                     <select
                       value={d.roomId ?? ''}
@@ -155,15 +158,19 @@ export function DeviceManagement() {
                     </select>
                   </td>
                   <td>
-                    <label className="muted" title="Geluid van deze bron komt onder alle video's van dit lokaal">
-                      <input
-                        type="checkbox"
-                        checked={d.isAudioSource}
-                        disabled={!d.roomId}
-                        onChange={(e) => void setAudioSource(d.id, e.target.checked)}
-                      />{' '}
-                      🎙
-                    </label>
+                    {d.kind === 'speaker' ? (
+                      <span className="muted">—</span>
+                    ) : (
+                      <label className="muted" title="Geluid van deze bron komt onder alle video's van dit lokaal">
+                        <input
+                          type="checkbox"
+                          checked={d.isAudioSource}
+                          disabled={!d.roomId}
+                          onChange={(e) => void setAudioSource(d.id, e.target.checked)}
+                        />{' '}
+                        🎙
+                      </label>
+                    )}
                   </td>
                   <td>
                     {d.paired ? (
@@ -212,6 +219,7 @@ export function DeviceManagement() {
 
 function AddDeviceForm({ onCreated }: { onCreated: () => void }) {
   const [name, setName] = useState('');
+  const [kind, setKind] = useState<DeviceKind>('camera');
   const [created, setCreated] = useState<PairingCode | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -219,14 +227,14 @@ function AddDeviceForm({ onCreated }: { onCreated: () => void }) {
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    const parsed = CreateDeviceSchema.safeParse({ name });
+    const parsed = CreateDeviceSchema.safeParse({ name, kind });
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? 'Controleer de naam');
       return;
     }
     setBusy(true);
     try {
-      const result = await api.createDevice(parsed.data.name);
+      const result = await api.createDevice(parsed.data.name, parsed.data.kind);
       setCreated({ code: result.pairingCode, expiresAt: result.pairingExpiresAt });
       await onCreated();
     } catch (err) {
@@ -236,11 +244,14 @@ function AddDeviceForm({ onCreated }: { onCreated: () => void }) {
     }
   }
 
-  // After creation, show the pairing code to enter in the camera app.
+  // After creation, show the pairing code to enter in the camera/speaker app.
   if (created) {
     return (
       <div>
-        <p className="muted">Apparaat toegevoegd. Open de camera-app en voer deze koppelcode in:</p>
+        <p className="muted">
+          Apparaat toegevoegd. Open de {kind === 'speaker' ? 'speaker' : 'camera'}-app en voer deze
+          koppelcode in:
+        </p>
         <CodeBox code={created.code} expiresAt={created.expiresAt} />
       </div>
     );
@@ -248,6 +259,11 @@ function AddDeviceForm({ onCreated }: { onCreated: () => void }) {
 
   return (
     <form onSubmit={submit}>
+      <label htmlFor="dev-kind">Type</label>
+      <select id="dev-kind" value={kind} onChange={(e) => setKind(e.target.value as DeviceKind)}>
+        <option value="camera">Camera</option>
+        <option value="speaker">Speaker (sync-toon)</option>
+      </select>
       <label htmlFor="dev-name">Naam apparaat (bijv. &ldquo;Lokaal 1 — voorkant&rdquo;)</label>
       <input id="dev-name" value={name} onChange={(e) => setName(e.target.value)} />
       {error && <p className="error">{error}</p>}

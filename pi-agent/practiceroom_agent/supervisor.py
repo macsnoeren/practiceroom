@@ -12,7 +12,8 @@ import requests
 
 from . import discovery
 from .camera_agent import CameraAgent
-from .config import CAPTURE_MODES, CameraConfig, ConfigStore
+from .config import CAPTURE_MODES, CameraConfig, ConfigStore, SpeakerConfig
+from .speaker_agent import SpeakerAgent
 
 log = logging.getLogger("practiceroom.supervisor")
 
@@ -25,24 +26,31 @@ class Supervisor:
     def __init__(self, store: ConfigStore) -> None:
         self._store = store
         self._agents: dict[str, CameraAgent] = {}
+        self._speaker_agents: dict[str, SpeakerAgent] = {}
         self._lock = threading.RLock()
 
     # -- startup -------------------------------------------------------------
 
     def start(self) -> None:
-        """Bring up an agent for every already-paired camera."""
+        """Bring up an agent for every already-paired camera and speaker."""
         cfg = self._store.snapshot()
         if not cfg.server_url:
             return
         for cam in cfg.cameras.values():
             if cam.paired:
                 self._ensure_agent(cam, cfg.server_url)
+        for spk in cfg.speakers.values():
+            if spk.paired:
+                self._ensure_speaker_agent(spk, cfg.server_url)
 
     def stop(self) -> None:
         with self._lock:
             for agent in self._agents.values():
                 agent.stop()
             self._agents.clear()
+            for speaker in self._speaker_agents.values():
+                speaker.stop()
+            self._speaker_agents.clear()
 
     # -- server URL ----------------------------------------------------------
 
@@ -137,6 +145,54 @@ class Supervisor:
         self._stop_agent(local_id)
         self._store.remove_camera(local_id)
 
+    # -- speaker configuration ----------------------------------------------
+
+    def configure_speaker(self, local_id: str, *, alsa_device: str, label: str) -> None:
+        existing = self._store.get_speaker(local_id)
+        spk = existing or SpeakerConfig(local_id=local_id)
+        spk.alsa_device = alsa_device
+        spk.label = label
+        self._store.upsert_speaker(spk)
+        if spk.paired:
+            self._restart_speaker(local_id)
+
+    def pair_speaker(self, local_id: str, pairing_code: str) -> SpeakerConfig:
+        server_url = self._store.server_url
+        if not server_url:
+            raise PairError("Stel eerst de server-URL in.")
+        spk = self._store.get_speaker(local_id)
+        if not spk:
+            raise PairError("Speaker is nog niet geconfigureerd.")
+
+        try:
+            res = requests.post(
+                f"{server_url}/api/devices/pair",
+                json={"pairingCode": pairing_code.strip()},
+                timeout=15,
+            )
+        except requests.RequestException as exc:
+            raise PairError(f"Kon de server niet bereiken: {exc}") from exc
+
+        if not res.ok:
+            raise PairError(_error_message(res) or "Koppelen mislukt.")
+
+        body = res.json()
+        device = body.get("device", {})
+        updated = self._store.update_speaker(
+            local_id,
+            token=body.get("token"),
+            device_id=device.get("id"),
+            device_name=device.get("name"),
+        )
+        if not updated:
+            raise PairError("Speaker verdween tijdens het koppelen.")
+        self._ensure_speaker_agent(updated, server_url)
+        return updated
+
+    def unpair_speaker(self, local_id: str) -> None:
+        self._stop_speaker_agent(local_id)
+        self._store.update_speaker(local_id, token=None, device_id=None, device_name=None)
+
     # -- views for the UI ----------------------------------------------------
 
     def list_sources(self) -> list[dict[str, object]]:
@@ -182,6 +238,40 @@ class Supervisor:
     def list_audio_devices(self) -> list[dict[str, str]]:
         return [{"alsa": d.alsa, "name": d.name} for d in discovery.list_audio_devices()]
 
+    def list_audio_outputs(self) -> list[dict[str, str]]:
+        return [{"alsa": d.alsa, "name": d.name} for d in discovery.list_audio_outputs()]
+
+    def list_speakers(self) -> list[dict[str, object]]:
+        """Available audio outputs merged with their speaker config and status."""
+        cfg = self._store.snapshot()
+        outputs = discovery.list_audio_outputs()
+        seen: set[str] = set()
+        speakers: list[dict[str, object]] = []
+        for dev in outputs:
+            seen.add(dev.alsa)
+            speakers.append(self._speaker_view(dev.alsa, dev.name, cfg.speakers.get(dev.alsa)))
+        for local_id, spk in cfg.speakers.items():
+            if local_id not in seen:
+                speakers.append(self._speaker_view(local_id, spk.label or local_id, spk, present=False))
+        return speakers
+
+    def _speaker_view(
+        self, local_id: str, detected_name: str, spk: SpeakerConfig | None, present: bool = True
+    ) -> dict[str, object]:
+        status = self._speaker_agent_status(local_id)
+        return {
+            "local_id": local_id,
+            "detected_name": detected_name,
+            "present": present,
+            "configured": spk is not None,
+            "alsa_device": spk.alsa_device if spk else local_id,
+            "label": spk.label if spk else "",
+            "paired": spk.paired if spk else False,
+            "device_name": spk.device_name if spk else None,
+            "connected": status.get("connected", False),
+            "error": status.get("error"),
+        }
+
     # -- agent management ----------------------------------------------------
 
     def _ensure_agent(self, cam: CameraConfig, server_url: str) -> None:
@@ -211,14 +301,48 @@ class Supervisor:
             for agent in self._agents.values():
                 agent.stop()
             self._agents.clear()
+            for speaker in self._speaker_agents.values():
+                speaker.stop()
+            self._speaker_agents.clear()
         if cfg.server_url:
             for cam in cfg.cameras.values():
                 if cam.paired:
                     self._ensure_agent(cam, cfg.server_url)
+            for spk in cfg.speakers.values():
+                if spk.paired:
+                    self._ensure_speaker_agent(spk, cfg.server_url)
 
     def _agent_status(self, local_id: str) -> dict[str, object]:
         with self._lock:
             agent = self._agents.get(local_id)
+        return agent.status() if agent else {}
+
+    # -- speaker agent management --------------------------------------------
+
+    def _ensure_speaker_agent(self, spk: SpeakerConfig, server_url: str) -> None:
+        with self._lock:
+            if spk.local_id in self._speaker_agents:
+                return
+            agent = SpeakerAgent(spk, server_url)
+            self._speaker_agents[spk.local_id] = agent
+            agent.start()
+            log.info("started speaker agent for %s", spk.local_id)
+
+    def _stop_speaker_agent(self, local_id: str) -> None:
+        with self._lock:
+            agent = self._speaker_agents.pop(local_id, None)
+        if agent:
+            agent.stop()
+
+    def _restart_speaker(self, local_id: str) -> None:
+        self._stop_speaker_agent(local_id)
+        spk = self._store.get_speaker(local_id)
+        if spk and spk.paired and self._store.server_url:
+            self._ensure_speaker_agent(spk, self._store.server_url)
+
+    def _speaker_agent_status(self, local_id: str) -> dict[str, object]:
+        with self._lock:
+            agent = self._speaker_agents.get(local_id)
         return agent.status() if agent else {}
 
 

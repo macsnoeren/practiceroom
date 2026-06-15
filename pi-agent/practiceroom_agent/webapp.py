@@ -26,6 +26,7 @@ def create_app(supervisor: Supervisor) -> Flask:
             server_url=supervisor.server_url,
             sources=supervisor.list_sources(),
             audio_devices=supervisor.list_audio_devices(),
+            speakers=supervisor.list_speakers(),
             conn_result=conn_result,
         )
 
@@ -74,19 +75,53 @@ def create_app(supervisor: Supervisor) -> Flask:
         flash("Koppeling verbroken.", "ok")
         return redirect(url_for("index"))
 
+    @app.post("/speaker/config")
+    def configure_speaker():  # type: ignore[no-untyped-def]
+        local_id = request.form["local_id"]
+        supervisor.configure_speaker(
+            local_id,
+            alsa_device=request.form.get("alsa_device", local_id),
+            label=request.form.get("label", ""),
+        )
+        flash("Speaker-instellingen opgeslagen.", "ok")
+        return redirect(url_for("index"))
+
+    @app.post("/speaker/pair")
+    def pair_speaker():  # type: ignore[no-untyped-def]
+        local_id = request.form["local_id"]
+        try:
+            spk = supervisor.pair_speaker(local_id, request.form.get("pairing_code", ""))
+            flash(f"Speaker gekoppeld als ‘{spk.device_name}’.", "ok")
+        except PairError as exc:
+            flash(str(exc), "error")
+        return redirect(url_for("index"))
+
+    @app.post("/speaker/unpair")
+    def unpair_speaker():  # type: ignore[no-untyped-def]
+        supervisor.unpair_speaker(request.form["local_id"])
+        flash("Speaker-koppeling verbroken.", "ok")
+        return redirect(url_for("index"))
+
     @app.get("/api/status")
     def status():  # type: ignore[no-untyped-def]
-        return jsonify(
-            {
-                s["local_id"]: {
-                    "paired": s["paired"],
-                    "connected": s["connected"],
-                    "recording": s["recording"],
-                    "present": s["present"],
-                    "error": s["error"],
-                }
-                for s in supervisor.list_sources()
+        merged = {
+            s["local_id"]: {
+                "paired": s["paired"],
+                "connected": s["connected"],
+                "recording": s["recording"],
+                "present": s["present"],
+                "error": s["error"],
             }
-        )
+            for s in supervisor.list_sources()
+        }
+        for s in supervisor.list_speakers():
+            merged[s["local_id"]] = {
+                "paired": s["paired"],
+                "connected": s["connected"],
+                "recording": False,
+                "present": s["present"],
+                "error": s["error"],
+            }
+        return jsonify(merged)
 
     return app

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { Server, type Socket } from 'socket.io';
 import {
@@ -7,6 +8,8 @@ import {
   MicLevelInputSchema,
   MicSetGainSchema,
   SOCKET_EVENTS,
+  SYNC_TONE_DURATION_MS,
+  SYNC_TONE_FREQUENCY_HZ,
   type OnlineDevice,
   type Role,
 } from '@practiceroom/shared';
@@ -15,15 +18,25 @@ import { corsOrigins } from '../env.js';
 import { getSessionContext, SESSION_COOKIE } from '../auth/session.js';
 import { hashToken } from '../lib/device.js';
 
+/** If a device never reports 'recording', play the tone anyway after this long. */
+const SYNC_TONE_ARM_TIMEOUT_MS = 6000;
+
 /** Lets HTTP routes ask which devices are currently connected. */
 export interface Presence {
   isOnline(deviceId: string): boolean;
+}
+
+/** Lets the recording route schedule a sync tone for a group of devices. The
+ * tone fires once every device has begun recording (so all capture its onset). */
+export interface SyncCoordinator {
+  arm(groupId: string, info: { deviceIds: string[]; speakerId: string }): void;
 }
 
 declare module 'fastify' {
   interface FastifyInstance {
     io: Server;
     presence: Presence;
+    syncCoordinator: SyncCoordinator;
   }
 }
 
@@ -55,6 +68,53 @@ export function setupRealtime(app: FastifyInstance): void {
   // Online devices per school: schoolId -> deviceId -> { name, socket ids }.
   const online = new Map<string, Map<string, { name: string; sockets: Set<string> }>>();
   const onlineDeviceIds = new Set<string>();
+
+  // Sync-tone coordination: groups waiting for all their capture devices to be
+  // recording before the room's speaker plays the start/sync tone.
+  interface ArmedGroup {
+    pending: Set<string>;
+    speakerId: string;
+    timer: NodeJS.Timeout;
+    fired: boolean;
+  }
+  const armedGroups = new Map<string, ArmedGroup>();
+
+  function fireTone(group: ArmedGroup): void {
+    if (group.fired) return;
+    group.fired = true;
+    clearTimeout(group.timer);
+    io.to(deviceRoom(group.speakerId)).emit(SOCKET_EVENTS.syncTone, {
+      toneId: randomUUID(),
+      frequency: SYNC_TONE_FREQUENCY_HZ,
+      durationMs: SYNC_TONE_DURATION_MS,
+    });
+  }
+
+  function armSyncTone(groupId: string, info: { deviceIds: string[]; speakerId: string }): void {
+    const existing = armedGroups.get(groupId);
+    if (existing) clearTimeout(existing.timer);
+    const group: ArmedGroup = {
+      pending: new Set(info.deviceIds),
+      speakerId: info.speakerId,
+      fired: false,
+      timer: setTimeout(() => {
+        fireTone(group);
+        armedGroups.delete(groupId);
+      }, SYNC_TONE_ARM_TIMEOUT_MS),
+    };
+    armedGroups.set(groupId, group);
+  }
+
+  // A device started recording: clear it from any armed group; once a group has
+  // no pending devices left, play the tone (all of them will capture its onset).
+  function notifyRecording(deviceId: string): void {
+    for (const [groupId, group] of armedGroups) {
+      if (group.pending.delete(deviceId) && group.pending.size === 0) {
+        fireTone(group);
+        armedGroups.delete(groupId);
+      }
+    }
+  }
 
   function markOnline(schoolId: string, deviceId: string, name: string, socketId: string): boolean {
     let school = online.get(schoolId);
@@ -204,6 +264,8 @@ export function setupRealtime(app: FastifyInstance): void {
           })
           .catch(() => undefined);
       }
+      // A device that has begun recording may complete an armed sync-tone group.
+      if (parsed.data.state === 'recording') notifyRecording(data.deviceId);
       io.to(schoolRoom(data.schoolId)).emit(SOCKET_EVENTS.deviceStatus, {
         deviceId: data.deviceId,
         state: parsed.data.state,
@@ -258,4 +320,5 @@ export function setupRealtime(app: FastifyInstance): void {
 
   app.decorate('io', io);
   app.decorate('presence', { isOnline: (deviceId: string) => onlineDeviceIds.has(deviceId) });
+  app.decorate('syncCoordinator', { arm: armSyncTone });
 }

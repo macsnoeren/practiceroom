@@ -178,6 +178,73 @@
           {% endif %}
         </div>
       {% endfor %}
+
+      <h2>Speakers</h2>
+      <p class="muted" style="margin-top:-0.5rem">
+        Een speaker speelt het starttoontje af waarmee meerdere camera’s exact gelijk worden gezet.
+        Voeg in het dashboard een apparaat van het type “Speaker” toe en koppel het hier.
+      </p>
+      {% for s in speakers %}
+        <div class="card" data-local-id="{{ s.local_id }}">
+          <div class="src-head">
+            <div>
+              <strong>{{ s.label or s.detected_name }}</strong>
+              <div class="muted">🔊 {{ s.local_id }}{% if not s.present %} · niet aangesloten{% endif %}</div>
+            </div>
+            <span class="badge js-status">…</span>
+          </div>
+
+          <hr class="hr" />
+
+          <form method="post" action="{{ url_for('configure_speaker') }}">
+            <input type="hidden" name="local_id" value="{{ s.local_id }}" />
+            <div class="row">
+              <div>
+                <label>Naam (optioneel)</label>
+                <input name="label" value="{{ s.label }}" placeholder="{{ s.detected_name }}" />
+              </div>
+              <div>
+                <label>Audio-uitgang</label>
+                <input name="alsa_device" value="{{ s.alsa_device }}" placeholder="default" />
+              </div>
+              <div class="grow0">
+                <label>&nbsp;</label>
+                <button type="submit" class="secondary">Instellingen opslaan</button>
+              </div>
+            </div>
+          </form>
+
+          <hr class="hr" />
+
+          {% if s.paired %}
+            <div class="row">
+              <div>
+                <span class="pill">● Gekoppeld</span>
+                <div class="muted">als ‘{{ s.device_name }}’ in PracticeRoom</div>
+              </div>
+              <form method="post" action="{{ url_for('unpair_speaker') }}" class="grow0">
+                <input type="hidden" name="local_id" value="{{ s.local_id }}" />
+                <button type="submit" class="danger">Ontkoppelen</button>
+              </form>
+            </div>
+          {% else %}
+            <form method="post" action="{{ url_for('pair_speaker') }}">
+              <input type="hidden" name="local_id" value="{{ s.local_id }}" />
+              <div class="row">
+                <div>
+                  <label>Koppelcode uit het dashboard</label>
+                  <input name="pairing_code" placeholder="bijv. K7P2QX" autocomplete="off" />
+                </div>
+                <div class="grow0">
+                  <label>&nbsp;</label>
+                  <button type="submit">Koppelen</button>
+                </div>
+              </div>
+              <p class="muted">Sla eerst de instellingen op, voeg in het dashboard een speaker toe en voer hier de code in.</p>
+            </form>
+          {% endif %}
+        </div>
+      {% endfor %}
     </div>
 
     <script>

@@ -5,6 +5,8 @@ import {
   SOCKET_EVENTS,
   StartRecordingMsgSchema,
   StopRecordingMsgSchema,
+  SyncTonePayloadSchema,
+  type SyncTonePayload,
 } from '@practiceroom/shared';
 import { getToken } from './api.js';
 
@@ -17,9 +19,11 @@ export interface ActiveRecording {
  * Connects this camera to the realtime channel using its device token and
  * tracks the active recording command from staff. Reports its state back so
  * the dashboard can show it, and exposes `sendFrame` to publish preview
- * snapshots.
+ * snapshots. `onSyncTone` fires when a speaker device is told to play the tone.
  */
-export function useDeviceSocket() {
+export function useDeviceSocket({
+  onSyncTone,
+}: { onSyncTone?: (tone: SyncTonePayload) => void } = {}) {
   const [connected, setConnected] = useState(false);
   const [activeRecording, setActiveRecording] = useState<ActiveRecording | null>(null);
   const [gainCommand, setGainCommand] = useState<number | null>(null);
@@ -28,6 +32,11 @@ export function useDeviceSocket() {
   // without a stale closure. Reporting 'idle' while a recording is active would
   // let the server treat the live recording as orphaned and reject its chunks.
   const activeRecordingRef = useRef<ActiveRecording | null>(null);
+  // Stable ref so the socket handler always calls the latest callback.
+  const onSyncToneRef = useRef(onSyncTone);
+  useEffect(() => {
+    onSyncToneRef.current = onSyncTone;
+  });
 
   useEffect(() => {
     const token = getToken();
@@ -62,6 +71,11 @@ export function useDeviceSocket() {
     socket.on(SOCKET_EVENTS.micSetGain, (raw: unknown) => {
       const parsed = MicGainCommandSchema.safeParse(raw);
       if (parsed.success) setGainCommand(parsed.data.gain);
+    });
+
+    socket.on(SOCKET_EVENTS.syncTone, (raw: unknown) => {
+      const parsed = SyncTonePayloadSchema.safeParse(raw);
+      if (parsed.success) onSyncToneRef.current?.(parsed.data);
     });
 
     return () => {

@@ -500,13 +500,31 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
       const segmentGroupId = randomUUID();
       await prisma.lesson.update({ where: { id }, data: { status: 'recording' } });
 
+      // The room's audio source: its sound is laid under the segment. When it is
+      // also a composed-source member (one device = camera + mic), that single
+      // recording doubles as the audio track — a device cannot record twice.
+      const audioSource = lesson.roomId
+        ? await prisma.device.findFirst({
+            where: { schoolId: me.schoolId, roomId: lesson.roomId, isAudioSource: true },
+          })
+        : null;
+      const audioSourceIsMember = !!audioSource && targets.some((t) => t.deviceId === audioSource.id);
+
       const lessonDeviceIds = new Set(lesson.devices.map((d) => d.deviceId));
+      // Every device + recording that takes part in this segment (for sync-tone).
+      const groupDeviceIds: string[] = [];
+      const groupRecordingIds: string[] = [];
       let firstRecordingId: string | null = null;
       for (const target of targets) {
         if (!lessonDeviceIds.has(target.deviceId)) {
           await prisma.lessonDevice.create({ data: { lessonId: id, deviceId: target.deviceId } });
           lessonDeviceIds.add(target.deviceId);
         }
+        // A composed-source member that is the audio source provides the audio
+        // track from its own (single) recording. A lone single camera keeps its
+        // own audio naturally, so it is never flagged here.
+        const isAudioTrack =
+          target.layoutRole !== null && !!audioSource && target.deviceId === audioSource.id;
         const created = await prisma.recording.create({
           data: {
             lessonId: id,
@@ -516,40 +534,55 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
             layoutRole: target.layoutRole,
             layoutPosition: target.layoutPosition,
             layoutScale: target.layoutScale,
+            isAudioTrack,
           },
         });
         if (firstRecordingId === null) firstRecordingId = created.id;
+        groupDeviceIds.push(target.deviceId);
+        groupRecordingIds.push(created.id);
         app.io
           .to(`device:${target.deviceId}`)
           .emit(SOCKET_EVENTS.recordingStart, { recordingId: created.id, lessonId: id });
       }
 
-      // If the lesson's room has a (different, online) audio source not already
-      // recording, capture it in parallel as the audio track for this segment.
-      if (lesson.roomId) {
-        const audioSource = await prisma.device.findFirst({
-          where: { schoolId: me.schoolId, roomId: lesson.roomId, isAudioSource: true },
+      // When the audio source is NOT already among the cameras, record it in
+      // parallel as a dedicated audio track for this segment.
+      if (audioSource && app.presence.isOnline(audioSource.id) && !audioSourceIsMember) {
+        if (!lessonDeviceIds.has(audioSource.id)) {
+          await prisma.lessonDevice.create({ data: { lessonId: id, deviceId: audioSource.id } });
+        }
+        const audioRecording = await prisma.recording.create({
+          data: {
+            lessonId: id,
+            deviceId: audioSource.id,
+            status: 'recording',
+            segmentGroupId,
+            isAudioTrack: true,
+          },
         });
-        if (
-          audioSource &&
-          app.presence.isOnline(audioSource.id) &&
-          !targets.some((t) => t.deviceId === audioSource.id)
-        ) {
-          if (!lessonDeviceIds.has(audioSource.id)) {
-            await prisma.lessonDevice.create({ data: { lessonId: id, deviceId: audioSource.id } });
-          }
-          const audioRecording = await prisma.recording.create({
-            data: {
-              lessonId: id,
-              deviceId: audioSource.id,
-              status: 'recording',
-              segmentGroupId,
-              isAudioTrack: true,
-            },
+        groupDeviceIds.push(audioSource.id);
+        groupRecordingIds.push(audioRecording.id);
+        app.io
+          .to(`device:${audioSource.id}`)
+          .emit(SOCKET_EVENTS.recordingStart, { recordingId: audioRecording.id, lessonId: id });
+      }
+
+      // Multiple devices in one segment need exact alignment. If the room has an
+      // online speaker, mark the segment for tone-based sync and arm the speaker
+      // to play the start/sync tone once every device is recording.
+      if (groupDeviceIds.length >= 2 && lesson.roomId) {
+        const speaker = await prisma.device.findFirst({
+          where: { schoolId: me.schoolId, roomId: lesson.roomId, kind: 'speaker' },
+        });
+        if (speaker && app.presence.isOnline(speaker.id)) {
+          await prisma.recording.updateMany({
+            where: { id: { in: groupRecordingIds } },
+            data: { syncTone: true },
           });
-          app.io
-            .to(`device:${audioSource.id}`)
-            .emit(SOCKET_EVENTS.recordingStart, { recordingId: audioRecording.id, lessonId: id });
+          app.syncCoordinator.arm(segmentGroupId, {
+            deviceIds: groupDeviceIds,
+            speakerId: speaker.id,
+          });
         }
       }
 

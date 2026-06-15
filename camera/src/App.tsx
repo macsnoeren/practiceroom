@@ -1,17 +1,24 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { PairDeviceSchema, type CropRect } from '@practiceroom/shared';
+import { PairDeviceSchema, type CropRect, type DeviceKind } from '@practiceroom/shared';
 import { ApiError, cameraApi, clearToken, getToken, setToken } from './api.js';
 import { CameraPreview } from './components/CameraPreview.js';
+import { SpeakerView } from './components/SpeakerView.js';
 import { useDeviceSocket } from './useDeviceSocket.js';
 import { useFramePublisher } from './useFramePublisher.js';
 import { useMicGain } from './useMicGain.js';
 import { useMicLevel } from './useMicLevel.js';
 import { useRecorder } from './useRecorder.js';
 
+interface PairedDevice {
+  id: string;
+  name: string;
+  kind: DeviceKind;
+}
+
 type State =
   | { kind: 'loading' }
   | { kind: 'unpaired' }
-  | { kind: 'paired'; device: { id: string; name: string } };
+  | { kind: 'paired'; device: PairedDevice };
 
 export function App() {
   const [state, setState] = useState<State>({ kind: 'loading' });
@@ -23,7 +30,9 @@ export function App() {
     }
     cameraApi
       .me()
-      .then((device) => setState({ kind: 'paired', device: { id: device.id, name: device.name } }))
+      .then((device) =>
+        setState({ kind: 'paired', device: { id: device.id, name: device.name, kind: device.kind } }),
+      )
       .catch(() => {
         clearToken();
         setState({ kind: 'unpaired' });
@@ -35,9 +44,11 @@ export function App() {
     setState({ kind: 'unpaired' });
   }
 
+  const isSpeaker = state.kind === 'paired' && state.device.kind === 'speaker';
+
   return (
     <div className="container">
-      <h1>PracticeRoom — Camera</h1>
+      <h1>PracticeRoom — {isSpeaker ? 'Speaker' : 'Camera'}</h1>
 
       {state.kind === 'loading' && <p className="muted">Laden…</p>}
 
@@ -45,7 +56,12 @@ export function App() {
         <PairForm onPaired={(device) => setState({ kind: 'paired', device })} />
       )}
 
-      {state.kind === 'paired' && <PairedView device={state.device} onUnpair={unpair} />}
+      {state.kind === 'paired' &&
+        (isSpeaker ? (
+          <SpeakerView device={state.device} onUnpair={unpair} />
+        ) : (
+          <PairedView device={state.device} onUnpair={unpair} />
+        ))}
     </div>
   );
 }
@@ -101,7 +117,7 @@ function PairedView({
   );
 }
 
-function PairForm({ onPaired }: { onPaired: (device: { id: string; name: string }) => void }) {
+function PairForm({ onPaired }: { onPaired: (device: PairedDevice) => void }) {
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -120,7 +136,13 @@ function PairForm({ onPaired }: { onPaired: (device: { id: string; name: string 
     try {
       const result = await cameraApi.pair(parsed.data.pairingCode);
       setToken(result.token);
-      onPaired(result.device);
+      // The pair result has no kind; fetch it so a speaker shows the right UI.
+      const me = await cameraApi.me().catch(() => null);
+      onPaired({
+        id: result.device.id,
+        name: result.device.name,
+        kind: me?.kind ?? 'camera',
+      });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Koppelen mislukt');
     } finally {

@@ -15,6 +15,8 @@ import {
   type PipInput,
 } from '../lib/composite.js';
 import { probeDuration, probeStreams } from '../lib/probe.js';
+import { detectToneOnset } from '../lib/tone.js';
+import { SYNC_TONE_DURATION_MS } from '@practiceroom/shared';
 import type { Recording } from '@prisma/client';
 import {
   brandingExists,
@@ -108,6 +110,33 @@ interface SegmentInput {
 }
 
 /**
+ * Per-file front-trim (seconds) that aligns a group's independently-started
+ * streams. Prefers the sync tone (frame-exact: trim each to just after its own
+ * detected tone) when the group used one and it is found in EVERY track. Else it
+ * aligns by duration (assumes the devices stopped together, trimming each to the
+ * common window). Else no trim.
+ */
+async function computeGroupSkips(paths: string[], usedSyncTone: boolean): Promise<Map<string, number>> {
+  const skips = new Map<string, number>();
+  if (usedSyncTone) {
+    const onsets = await Promise.all(paths.map((p) => detectToneOnset(p)));
+    if (onsets.every((o) => o !== null)) {
+      const toneEnd = SYNC_TONE_DURATION_MS / 1000;
+      paths.forEach((p, i) => skips.set(p, (onsets[i] as number) + toneEnd));
+      return skips;
+    }
+  }
+  const durations = await Promise.all(paths.map((p) => probeDuration(p)));
+  if (durations.every((d) => d > 0)) {
+    const minD = Math.min(...durations);
+    paths.forEach((p, i) => skips.set(p, Math.max(0, durations[i]! - minD)));
+  } else {
+    paths.forEach((p) => skips.set(p, 0));
+  }
+  return skips;
+}
+
+/**
  * Turns a lesson's completed recordings into the ordered list of segment inputs
  * for the concat step. Recordings started together (a camera + the room's audio
  * source) share a `segmentGroupId`: for such a group the camera's video is muxed
@@ -132,53 +161,65 @@ async function buildLessonSegments(
   const ordered: { startedAt: number; input: SegmentInput }[] = [];
   for (const members of groups.values()) {
     const audioRec = members.find((r) => r.isAudioTrack) ?? null;
-    const videoMembers = members.filter((r) => !r.isAudioTrack);
+    // Video participants: a composed source's laid-out members (one of which may
+    // ALSO be the audio source, so it stays a video layer too), or — for a single
+    // camera — every non-auxiliary recording. A pure auxiliary audio track (the
+    // room mic, no layout) is never shown.
+    const layoutMembers = members.filter((r) => r.layoutRole !== null);
+    const videoMembers =
+      layoutMembers.length > 0 ? layoutMembers : members.filter((r) => !r.isAudioTrack);
     if (videoMembers.length === 0) continue; // lone audio track: auxiliary
 
     // The full-frame camera, plus any picture-in-picture insets (composed source).
     const main = videoMembers.find((r) => r.layoutRole === 'main') ?? videoMembers[0]!;
     const pips = videoMembers.filter((r) => r.layoutRole === 'pip' && r.hasVideo);
 
+    const usedSyncTone = members.some((r) => r.syncTone);
+
     let path: string;
     let crop: CropRect | null;
     if (pips.length > 0 && main.hasVideo) {
       // Composed source: overlay the insets onto the main camera, with the audio
-      // source's sound (when present) laid under the result.
-      //
-      // The member cameras begin a little apart (per-device warm-up) but stop
-      // together, so align by the END: each file's duration tells how much earlier
-      // it started, and we fast-seek that much off its front so every layer covers
-      // the same common window. Only done when all durations are known.
+      // source's sound (when present) laid under the result. Align all layers by
+      // the sync tone (or duration as a fallback) so they line up frame-exactly.
       const mainPath = recordingPath(main.id);
       const pipPaths = pips.map((p) => recordingPath(p.id));
       const audioPath = audioRec ? recordingPath(audioRec.id) : null;
       const allPaths = [mainPath, ...pipPaths, ...(audioPath ? [audioPath] : [])];
-      const durations = await Promise.all(allPaths.map((p) => probeDuration(p)));
-      const known = durations.every((d) => d > 0);
-      const minD = known ? Math.min(...durations) : 0;
-      const skip = (idx: number) => (known ? Math.max(0, durations[idx]! - minD) : 0);
+      const skips = await computeGroupSkips(allPaths, usedSyncTone);
+      const skipOf = (p: string) => skips.get(p) ?? 0;
 
       path = composedSegmentPath(lessonId, main.id);
       await runFfmpeg(
         buildPipCompositeArgs(
-          { input: mainPath, skip: skip(0) },
+          { input: mainPath, skip: skipOf(mainPath) },
           pips.map((p, i) => ({
             input: pipPaths[i]!,
             position: (p.layoutPosition ?? 'bottom-right') as PipInput['position'],
             scale: p.layoutScale ?? 0.28,
-            skip: skip(1 + i),
+            skip: skipOf(pipPaths[i]!),
           })),
-          audioPath ? { input: audioPath, skip: skip(1 + pips.length) } : null,
+          audioPath ? { input: audioPath, skip: skipOf(audioPath) } : null,
           path,
         ),
       );
       temps.push(path);
       crop = null; // a crop does not apply to a composed frame
     } else if (audioRec && main.hasVideo) {
-      // Single camera with the audio source's sound laid under it.
-      path = normalizedSegmentPath(lessonId, main.id);
+      // Single camera with the audio source's sound laid under it, aligned by the
+      // sync tone (or duration fallback). Aligning needs a re-encode, so the
+      // output then goes to an .mkv; without alignment it stays a fast .webm copy.
+      const mainPath = recordingPath(main.id);
+      const audioPath = recordingPath(audioRec.id);
+      const skips = await computeGroupSkips([mainPath, audioPath], usedSyncTone);
+      const vSkip = skips.get(mainPath) ?? 0;
+      const aSkip = skips.get(audioPath) ?? 0;
+      const aligned = vSkip > 0 || aSkip > 0;
+      path = aligned
+        ? composedSegmentPath(lessonId, main.id)
+        : normalizedSegmentPath(lessonId, main.id);
       await runFfmpeg(
-        buildMuxVideoOverAudioArgs(recordingPath(main.id), recordingPath(audioRec.id), path),
+        buildMuxVideoOverAudioArgs({ input: mainPath, skip: vSkip }, { input: audioPath, skip: aSkip }, path),
       );
       temps.push(path);
       crop = recordingCrop(main);

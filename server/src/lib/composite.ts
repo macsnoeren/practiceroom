@@ -39,33 +39,40 @@ export function buildSilentAudioArgs(input: string, output: string): string[] {
 
 /**
  * ffmpeg args that replace a segment's audio with the audio from a separate
- * recording (the room's audio source). The video stream is copied untouched and
- * the audio source's sound is laid under it; `-shortest` ties the result to
- * whichever stream ends first (they were started/stopped together, so this just
- * trims a small tail). Output stays a .webm so concat treats it like any segment.
+ * recording (the room's audio source), laying that sound under the camera video.
+ *
+ * Without alignment (`skip` 0 on both) the video is copied untouched and the
+ * output stays a fast .webm — the previous behaviour. When a front-trim is given
+ * (sync-tone/duration alignment), each input is fast-seeked and the video is
+ * re-encoded with reset timestamps so the trim is frame-accurate; the caller
+ * then writes to an .mkv (h264). `-shortest` trims the small tail difference.
  */
 export function buildMuxVideoOverAudioArgs(
-  videoInput: string,
-  audioInput: string,
+  video: TimedInput,
+  audio: TimedInput,
   output: string,
 ): string[] {
-  return [
-    '-i',
-    videoInput,
-    '-i',
-    audioInput,
+  const aligned = (video.skip ?? 0) > 0 || (audio.skip ?? 0) > 0;
+  const args = [
+    ...seekInput(video.input, video.skip),
+    ...seekInput(audio.input, audio.skip),
     '-map',
     '0:v:0',
     '-map',
     '1:a:0',
-    '-c:v',
-    'copy',
-    '-c:a',
-    'libopus',
-    '-shortest',
-    '-y',
-    output,
   ];
+  if (aligned) {
+    args.push(
+      '-vf', 'setpts=PTS-STARTPTS',
+      '-af', 'aresample=async=1,asetpts=PTS-STARTPTS',
+      '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
+      '-c:a', 'libopus',
+    );
+  } else {
+    args.push('-c:v', 'copy', '-c:a', 'libopus');
+  }
+  args.push('-shortest', '-y', output);
+  return args;
 }
 
 /**

@@ -247,9 +247,15 @@ export type AuditLogPageDto = z.infer<typeof AuditLogPageDtoSchema>;
 /* Devices (cameras/microphones)                                              */
 /* -------------------------------------------------------------------------- */
 
-/** Admin/teacher registers a capture device by name; pairing happens later. */
+/** A capture device records; a speaker only plays the room's sync tone. */
+export const DEVICE_KINDS = ['camera', 'speaker'] as const;
+export const DeviceKindSchema = z.enum(DEVICE_KINDS);
+export type DeviceKind = (typeof DEVICE_KINDS)[number];
+
+/** Admin/teacher registers a device by name (and kind); pairing happens later. */
 export const CreateDeviceSchema = z.object({
   name: nameField,
+  kind: DeviceKindSchema.default('camera'),
 });
 export type CreateDeviceInput = z.infer<typeof CreateDeviceSchema>;
 
@@ -264,6 +270,7 @@ export const DeviceDtoSchema = z.object({
   id: z.string(),
   schoolId: z.string(),
   name: z.string(),
+  kind: DeviceKindSchema,
   roomId: z.string().nullable(),
   isAudioSource: z.boolean(),
   paired: z.boolean(),
@@ -365,6 +372,7 @@ export const DeviceSelfSchema = z.object({
   id: z.string(),
   name: z.string(),
   schoolId: z.string(),
+  kind: DeviceKindSchema,
 });
 export type DeviceSelf = z.infer<typeof DeviceSelfSchema>;
 
@@ -726,7 +734,26 @@ export const SOCKET_EVENTS = {
   micLevel: 'mic:level',
   /** device -> server -> staff: a recording segment was successfully completed. */
   recordingCompleted: 'recording:completed',
+  /** server -> speaker device: play the sync tone now (start signal + marker). */
+  syncTone: 'sync:tone',
 } as const;
+
+/* ---- Sync tone (multicam alignment via a speaker in the room) ------------- */
+
+// A speaker plays this tone at the start of a multi-device segment; every mic
+// records it, and the worker aligns the streams by detecting it. The clients
+// (browser + pi-agent) and the worker must all agree on these values.
+export const SYNC_TONE_FREQUENCY_HZ = 1000;
+export const SYNC_TONE_DURATION_MS = 2000;
+export const SYNC_TONE_FADE_MS = 50;
+
+/** server -> speaker device: details of the tone to play. */
+export const SyncTonePayloadSchema = z.object({
+  toneId: z.string(),
+  frequency: z.number(),
+  durationMs: z.number(),
+});
+export type SyncTonePayload = z.infer<typeof SyncTonePayloadSchema>;
 
 /** A 0–1 microphone level for the control room's live meter. */
 const levelField = z.number().min(0).max(1);
