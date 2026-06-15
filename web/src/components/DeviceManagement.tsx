@@ -211,7 +211,11 @@ export function DeviceManagement() {
                     )}
                   </td>
                   <td>
-                    {isOnline ? (
+                    {isOnline && state === 'error' ? (
+                      <span className="tag" title="Apparaat is verbonden maar de camera is niet aangesloten">
+                        ⚠ niet aangesloten
+                      </span>
+                    ) : isOnline ? (
                       <span className="tag tag-ok">● online{state ? ` (${state})` : ''}</span>
                     ) : (
                       <span className="tag">offline</span>

@@ -493,7 +493,9 @@ export function Regiekamer({ user }: { user: UserDto }) {
           ) : (
             <div className="cam-grid">
               {roomCameras.map((d) => {
-                const isOnline = online.has(d.id);
+                // Connected but the camera hardware is unplugged → not usable.
+                const unavailable = statuses[d.id] === 'error';
+                const isOnline = online.has(d.id) && !unavailable;
                 const isActive = activeKey === deviceKey(d.id);
                 const frame = frames[d.id];
                 const canClick = !!activeLessonId && !finished && (isOnline || isActive);
@@ -510,20 +512,24 @@ export function Regiekamer({ user }: { user: UserDto }) {
                           ? 'Selecteer eerst een les'
                           : finished
                             ? 'Les is al afgerond'
-                            : undefined
+                            : unavailable
+                              ? 'Camera niet aangesloten'
+                              : undefined
                       }
                     >
-                      {frame ? (
+                      {frame && !unavailable ? (
                         <img className="cam-tile-img" src={frame} alt={`Beeld van ${d.name}`} />
                       ) : (
                         <div className="cam-tile-img placeholder">
-                          {isOnline ? 'Wachten op beeld…' : 'Offline'}
+                          {unavailable ? 'Niet aangesloten' : isOnline ? 'Wachten op beeld…' : 'Offline'}
                         </div>
                       )}
                       <div className="cam-tile-bar">
                         <span className="cam-tile-name">{d.name}</span>
                         {isActive ? (
                           <span className="tag rec">● REC</span>
+                        ) : unavailable ? (
+                          <span className="tag">⚠ niet aangesloten</span>
                         ) : isOnline ? (
                           <span className="tag tag-ok">● online</span>
                         ) : (
@@ -566,9 +572,10 @@ export function Regiekamer({ user }: { user: UserDto }) {
               {roomSources.map((s) => {
                 const main = s.members.find((m) => m.role === 'main');
                 const pips = s.members.filter((m) => m.role === 'pip');
-                const mainOnline = !!main && online.has(main.deviceId);
+                const mainUnavailable = !!main && statuses[main.deviceId] === 'error';
+                const mainOnline = !!main && online.has(main.deviceId) && !mainUnavailable;
                 const isActive = activeKey === sourceKey(s.id);
-                const frame = main ? frames[main.deviceId] : undefined;
+                const frame = main && !mainUnavailable ? frames[main.deviceId] : undefined;
                 const canClick = !!activeLessonId && !finished && (mainOnline || isActive);
                 const camName = (id: string) =>
                   allDevices.find((dev) => dev.id === id)?.name ?? 'Camera';
@@ -591,7 +598,11 @@ export function Regiekamer({ user }: { user: UserDto }) {
                         <img className="cam-tile-img" src={frame} alt={`Beeld van ${s.name}`} />
                       ) : (
                         <div className="cam-tile-img placeholder">
-                          {mainOnline ? 'Wachten op beeld…' : 'Hoofdcamera offline'}
+                          {mainUnavailable
+                            ? 'Hoofdcamera niet aangesloten'
+                            : mainOnline
+                              ? 'Wachten op beeld…'
+                              : 'Hoofdcamera offline'}
                         </div>
                       )}
                       <div className="cam-tile-bar">

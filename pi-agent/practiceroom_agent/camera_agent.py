@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import os
 import subprocess
 import tempfile
 import threading
@@ -118,6 +119,9 @@ class CameraAgent:
         self._recording = False
         self._gain = 1.0
         self._last_error: str | None = None
+        # Whether the camera hardware is currently attached. Reported to the
+        # server so the control room shows an unplugged camera as unavailable.
+        self._present = True
 
         # Each camera gets its own preview file so multiple agents don't clash.
         safe = "".join(c if c.isalnum() else "_" for c in cfg.local_id)
@@ -182,9 +186,14 @@ class CameraAgent:
         def connect() -> None:  # noqa: D401 — socketio handler
             self._connected.set()
             self._last_error = None
-            sio.emit(EV_STATUS_UPDATE, {"state": "recording" if self._recording else "idle"})
-            if not self._recording:
+            self._present = self._device_present()
+            if self._recording:
+                sio.emit(EV_STATUS_UPDATE, {"state": "recording"})
+            elif self._present:
+                sio.emit(EV_STATUS_UPDATE, {"state": "idle"})
                 self._start_preview_process()
+            else:
+                sio.emit(EV_STATUS_UPDATE, {"state": "error", "message": "Camera niet aangesloten"})
 
         @sio.event
         def disconnect() -> None:
@@ -321,13 +330,42 @@ class CameraAgent:
             except (OSError, subprocess.TimeoutExpired):
                 proc.kill()
 
+    def _device_present(self) -> bool:
+        """Whether the camera hardware is currently attached. Audio-only sources
+        and synthetic test devices are always considered present."""
+        if not self._cfg.wants_video or not self._cfg.video_device:
+            return True
+        if self._cfg.video_device.startswith(capture.TEST_PREFIX):
+            return True
+        return os.path.exists(self._cfg.video_device)
+
+    def _update_presence(self) -> None:
+        """Re-check the hardware and, on a change, tell the server (so an unplugged
+        camera shows as unavailable instead of online). Never disturbs an active
+        recording's status."""
+        present = self._device_present()
+        if present == self._present:
+            return
+        self._present = present
+        if self._recording or not self._connected.is_set():
+            return
+        if present:
+            self._sio.emit(EV_STATUS_UPDATE, {"state": "idle"})
+            self._start_preview_process()
+        else:
+            self._stop_preview_process()
+            self._sio.emit(EV_STATUS_UPDATE, {"state": "error", "message": "Camera niet aangesloten"})
+
     def _preview_loop(self) -> None:
         """Emit the latest preview JPEG to the control room while connected."""
         while not self._stopping.is_set():
             self._stopping.wait(PREVIEW_EMIT_INTERVAL_S)
             if self._stopping.is_set():
                 break
-            if not self._connected.is_set() or not self._cfg.wants_video:
+            if not self._connected.is_set():
+                continue
+            self._update_presence()
+            if not self._cfg.wants_video or not self._present:
                 continue
             try:
                 raw = self._preview_path.read_bytes()

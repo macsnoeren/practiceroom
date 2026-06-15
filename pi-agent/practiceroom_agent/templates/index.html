@@ -264,6 +264,9 @@
             const badge = card.querySelector('.js-status');
             if (!badge) return;
             if (!s || !s.paired) { badge.textContent = 'Niet gekoppeld'; badge.className = 'badge js-status off'; return; }
+            // Unplugged hardware is not "online" even though the agent's server
+            // connection is still up.
+            if (s.present === false) { badge.textContent = '⚠ Niet aangesloten'; badge.className = 'badge js-status off'; badge.title = ''; return; }
             if (s.recording) { badge.textContent = '● Opname'; badge.className = 'badge js-status rec'; }
             else if (s.connected) { badge.textContent = '● Online'; badge.className = 'badge js-status ok'; }
             else {
