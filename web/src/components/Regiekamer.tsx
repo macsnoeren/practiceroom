@@ -393,11 +393,11 @@ export function Regiekamer({ user }: { user: UserDto }) {
   const finished =
     activeLessonDetail?.status === 'recorded' || activeLessonDetail?.status === 'ready';
 
-  // The camera segments shown to the teacher. The room's audio source records a
-  // parallel audio-only segment per camera segment; that is laid under the video
-  // by the worker, so it is hidden here rather than listed as its own segment.
+  // The camera segments shown to the teacher. A pure auxiliary audio track (the
+  // room's audio source recorded just for sound, no video layout) is hidden — but
+  // a video layer that is ALSO the audio source (layoutRole set) is still shown.
   const videoRecordings = activeLessonDetail
-    ? activeLessonDetail.recordings.filter((r) => !r.isAudioTrack)
+    ? activeLessonDetail.recordings.filter((r) => !r.isAudioTrack || r.layoutRole !== null)
     : [];
 
   // Own-video lessons: teacher is also the student.

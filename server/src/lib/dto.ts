@@ -285,6 +285,7 @@ export function toRecordingDto(recording: Recording): RecordingDto {
     hasVideo: recording.hasVideo,
     hasAudio: recording.hasAudio,
     isAudioTrack: recording.isAudioTrack,
+    layoutRole: recording.layoutRole,
     crop,
     sizeBytes: recording.sizeBytes,
     startedAt: recording.startedAt.toISOString(),

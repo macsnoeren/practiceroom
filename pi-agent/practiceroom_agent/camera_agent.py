@@ -14,6 +14,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import socketio
@@ -39,11 +40,13 @@ class _CaptureSession:
     """A running recording: ffmpeg → reader thread → chunk uploader."""
 
     def __init__(self, cmd: list[str], uploader: ChunkUploader, mime_type: str,
-                 has_video: bool, has_audio: bool) -> None:
+                 has_video: bool, has_audio: bool,
+                 on_first_data: Callable[[], None] | None = None) -> None:
         self._uploader = uploader
         self._mime_type = mime_type
         self._has_video = has_video
         self._has_audio = has_audio
+        self._on_first_data = on_first_data
         self._proc = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.DEVNULL,
         )
@@ -52,10 +55,19 @@ class _CaptureSession:
 
     def _pump(self) -> None:
         assert self._proc.stdout is not None
+        first = True
         while True:
             data = self._proc.stdout.read(65536)
             if not data:
                 break
+            if first:
+                # The first bytes mean ffmpeg is actually producing output now.
+                first = False
+                if self._on_first_data is not None:
+                    try:
+                        self._on_first_data()
+                    except Exception:  # noqa: BLE001 — a status emit must not break capture
+                        pass
             self._uploader.feed(data)
 
     def stop_and_finalize(self) -> bool:
@@ -232,7 +244,10 @@ class CameraAgent:
             mime = "video/x-matroska" if has_video else "audio/x-matroska"
             uploader = ChunkUploader(self._server_url, recording_id, self._cfg.token or "")
             try:
-                self._session = _CaptureSession(cmd, uploader, mime, has_video, has_audio)
+                self._session = _CaptureSession(
+                    cmd, uploader, mime, has_video, has_audio,
+                    on_first_data=lambda: self._report_capturing(recording_id),
+                )
             except OSError as exc:
                 self._last_error = f"ffmpeg start mislukt: {exc}"
                 log.error("[%s] %s", self._cfg.local_id, self._last_error)
@@ -240,7 +255,13 @@ class CameraAgent:
                 return
             self._recording = True
             self._recording_id = recording_id
-        if self._connected.is_set():
+        # 'recording' is reported from on_first_data (when ffmpeg actually starts
+        # producing), not here — so the server only counts it ready once it really
+        # captures, which keeps the sync tone from firing too early.
+
+    def _report_capturing(self, recording_id: str) -> None:
+        # Only report if this is still the active recording (not a stale session).
+        if self._recording_id == recording_id and self._connected.is_set():
             self._sio.emit(EV_STATUS_UPDATE, {"state": "recording"})
 
     def _end_recording(self) -> None:

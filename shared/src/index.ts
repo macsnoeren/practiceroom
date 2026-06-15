@@ -649,8 +649,12 @@ export const RecordingDtoSchema = z.object({
   hasVideo: z.boolean(),
   hasAudio: z.boolean(),
   // True for a segment captured by a room's audio source: its sound is laid
-  // under the paired camera video, so the UI hides it as a standalone segment.
+  // under the paired camera video, so the UI hides it as a standalone segment —
+  // unless it is also a video layer (layoutRole set), e.g. a main camera that is
+  // its own audio source.
   isAudioTrack: z.boolean(),
+  // Layout within a composed source ('main'|'pip'), or null for a single camera.
+  layoutRole: z.string().nullable(),
   crop: CropRectSchema.nullable(),
   sizeBytes: z.number(),
   startedAt: z.string(),

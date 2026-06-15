@@ -73,7 +73,7 @@ function PairedView({
   device: { id: string; name: string };
   onUnpair: () => void;
 }) {
-  const { connected, activeRecording, sendFrame, gainCommand, reportGain, reportLevel } =
+  const { connected, activeRecording, sendFrame, gainCommand, reportGain, reportLevel, reportCapturing } =
     useDeviceSocket();
   const [rawStream, setRawStream] = useState<MediaStream | null>(null);
   const [crop, setCrop] = useState<CropRect | null>(null);
@@ -89,6 +89,11 @@ function PairedView({
   }, [connected, gain, reportGain]);
 
   const isRecording = recorderState === 'recording';
+
+  // Report 'recording' to the server only once capture has actually begun.
+  useEffect(() => {
+    reportCapturing(isRecording);
+  }, [isRecording, reportCapturing]);
 
   return (
     <>

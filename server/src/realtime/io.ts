@@ -19,7 +19,10 @@ import { getSessionContext, SESSION_COOKIE } from '../auth/session.js';
 import { hashToken } from '../lib/device.js';
 
 /** If a device never reports 'recording', play the tone anyway after this long. */
-const SYNC_TONE_ARM_TIMEOUT_MS = 6000;
+const SYNC_TONE_ARM_TIMEOUT_MS = 8000;
+/** Extra settle time after every device reports recording, before the tone — a
+ * small margin so capture is genuinely stable when the tone plays. */
+const SYNC_TONE_READY_MARGIN_MS = 800;
 
 /** Lets HTTP routes ask which devices are currently connected. */
 export interface Presence {
@@ -110,8 +113,10 @@ export function setupRealtime(app: FastifyInstance): void {
   function notifyRecording(deviceId: string): void {
     for (const [groupId, group] of armedGroups) {
       if (group.pending.delete(deviceId) && group.pending.size === 0) {
-        fireTone(group);
         armedGroups.delete(groupId);
+        clearTimeout(group.timer);
+        // Give capture a moment to stabilise, then play the tone.
+        setTimeout(() => fireTone(group), SYNC_TONE_READY_MARGIN_MS);
       }
     }
   }

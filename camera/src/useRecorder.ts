@@ -77,8 +77,11 @@ export function useRecorder(
         .then(() => setState(uploader.hasFailed ? 'error' : 'idle'));
     };
 
+    // Report 'recording' only once capture has actually begun (onstart), not when
+    // start() is merely called — so the control room and the sync-tone coordinator
+    // wait for real frames before treating this camera as ready.
+    recorder.onstart = () => setState('recording');
     recorder.start(2000); // emit a chunk every 2 seconds
-    setState('recording');
 
     return () => {
       if (recorder.state !== 'inactive') recorder.stop();

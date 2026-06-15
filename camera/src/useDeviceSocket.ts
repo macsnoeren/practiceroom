@@ -32,6 +32,10 @@ export function useDeviceSocket({
   // without a stale closure. Reporting 'idle' while a recording is active would
   // let the server treat the live recording as orphaned and reject its chunks.
   const activeRecordingRef = useRef<ActiveRecording | null>(null);
+  // Whether this camera is ACTUALLY capturing frames now (set by the recorder via
+  // reportCapturing). Drives the 'recording' status report so the server only
+  // counts the camera as ready once real capture has started.
+  const capturingRef = useRef(false);
   // Stable ref so the socket handler always calls the latest callback.
   const onSyncToneRef = useRef(onSyncTone);
   useEffect(() => {
@@ -47,8 +51,10 @@ export function useDeviceSocket({
 
     socket.on('connect', () => {
       setConnected(true);
+      // Report the true state on (re)connect: 'recording' only when actually
+      // capturing, so a reconnect mid-recording is not mistaken for idle.
       socket.emit(SOCKET_EVENTS.statusUpdate, {
-        state: activeRecordingRef.current ? 'recording' : 'idle',
+        state: capturingRef.current ? 'recording' : 'idle',
       });
     });
     socket.on('disconnect', () => setConnected(false));
@@ -56,14 +62,16 @@ export function useDeviceSocket({
     socket.on(SOCKET_EVENTS.recordingStart, (raw: unknown) => {
       const parsed = StartRecordingMsgSchema.safeParse(raw);
       if (!parsed.success) return;
+      // Arm the recorder; the 'recording' status is reported later, once capture
+      // actually begins (via reportCapturing from the recorder).
       activeRecordingRef.current = parsed.data;
       setActiveRecording(parsed.data);
-      socket.emit(SOCKET_EVENTS.statusUpdate, { state: 'recording' });
     });
     socket.on(SOCKET_EVENTS.recordingStop, (raw: unknown) => {
       const parsed = StopRecordingMsgSchema.safeParse(raw);
       if (!parsed.success) return;
       activeRecordingRef.current = null;
+      capturingRef.current = false;
       setActiveRecording(null);
       socket.emit(SOCKET_EVENTS.statusUpdate, { state: 'idle' });
     });
@@ -84,6 +92,16 @@ export function useDeviceSocket({
     };
   }, []);
 
+  // The recorder calls this when capture actually starts/stops, so the device
+  // only reports 'recording' once it is truly capturing frames.
+  const reportCapturing = useCallback((active: boolean) => {
+    if (capturingRef.current === active) return;
+    capturingRef.current = active;
+    socketRef.current?.emit(SOCKET_EVENTS.statusUpdate, {
+      state: active ? 'recording' : 'idle',
+    });
+  }, []);
+
   const sendFrame = useCallback((dataUrl: string) => {
     socketRef.current?.emit(SOCKET_EVENTS.cameraFrame, { dataUrl });
   }, []);
@@ -98,5 +116,13 @@ export function useDeviceSocket({
     socketRef.current?.emit(SOCKET_EVENTS.micLevel, { level });
   }, []);
 
-  return { connected, activeRecording, sendFrame, gainCommand, reportGain, reportLevel };
+  return {
+    connected,
+    activeRecording,
+    sendFrame,
+    gainCommand,
+    reportGain,
+    reportLevel,
+    reportCapturing,
+  };
 }

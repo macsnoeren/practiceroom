@@ -151,9 +151,9 @@ export function LessonDashboard() {
   if (!detail) return <p className="muted">Laden…</p>;
 
   const finished = detail.status === 'recorded' || detail.status === 'ready';
-  // Hide the room's audio-source segments: their sound is laid under the paired
-  // camera video by the worker, so they are not shown as standalone segments.
-  const videoRecordings = detail.recordings.filter((r) => !r.isAudioTrack);
+  // Hide pure auxiliary audio-source segments (sound only, no video layout); a
+  // video layer that is also the audio source (layoutRole set) is still shown.
+  const videoRecordings = detail.recordings.filter((r) => !r.isAudioTrack || r.layoutRole !== null);
 
   return (
     <div>
