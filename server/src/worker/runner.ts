@@ -281,6 +281,13 @@ async function buildLessonSegments(
       const mainSkip = videoSkip(align.skips.get(mainPath) ?? 0, main.deviceId);
       const pipSkips = pips.map((p, i) => videoSkip(align.skips.get(pipPaths[i]!) ?? 0, p.deviceId));
       const audioSkip = audioPath ? (align.skips.get(audioPath) ?? 0) : 0;
+      // The bed: the dedicated audio source, else the main camera's own audio
+      // (trimmed to the audio-aligned window), else a silent track.
+      const audioInput = audioPath
+        ? { input: audioPath, skip: audioSkip }
+        : main.hasAudio
+          ? { input: mainPath, skip: align.skips.get(mainPath) ?? 0 }
+          : null;
 
       path = composedSegmentPath(lessonId, main.id);
       await runFfmpeg(
@@ -292,7 +299,7 @@ async function buildLessonSegments(
             scale: p.layoutScale ?? 0.28,
             skip: pipSkips[i]!,
           })),
-          audioPath ? { input: audioPath, skip: audioSkip } : null,
+          audioInput,
           path,
         ),
       );

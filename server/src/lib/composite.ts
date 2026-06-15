@@ -55,26 +55,32 @@ export function buildMuxVideoOverAudioArgs(
   output: string,
 ): string[] {
   const aligned = (video.skip ?? 0) > 0 || (audio.skip ?? 0) > 0;
-  const args = [
-    ...seekInput(video.input, video.skip),
-    ...seekInput(audio.input, audio.skip),
-    '-map',
-    '0:v:0',
-    '-map',
-    '1:a:0',
-  ];
-  if (aligned) {
-    args.push(
-      '-vf', 'setpts=PTS-STARTPTS',
-      '-af', 'aresample=async=1,asetpts=PTS-STARTPTS',
-      '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
+  if (!aligned) {
+    // No trim needed: copy the video untouched (fast) and lay the audio under it.
+    return [
+      '-i', video.input,
+      '-i', audio.input,
+      '-map', '0:v:0',
+      '-map', '1:a:0',
+      '-c:v', 'copy',
       '-c:a', 'libopus',
-    );
-  } else {
-    args.push('-c:v', 'copy', '-c:a', 'libopus');
+      '-shortest', '-y', output,
+    ];
   }
-  args.push('-shortest', '-y', output);
-  return args;
+  // Trim each stream to the aligned window inside the filter graph (reliable on
+  // index-less recordings, unlike a -ss seek), which means re-encoding the video.
+  return [
+    '-i', video.input,
+    '-i', audio.input,
+    '-filter_complex',
+    `[0:v]${trimPrefix(video.skip)}setpts=PTS-STARTPTS[v];` +
+      `[1:a]${atrimPrefix(audio.skip)}aresample=async=1,asetpts=PTS-STARTPTS[a]`,
+    '-map', '[v]',
+    '-map', '[a]',
+    '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
+    '-c:a', 'libopus',
+    '-shortest', '-y', output,
+  ];
 }
 
 /**
@@ -123,9 +129,17 @@ export interface TimedInput {
   skip?: number;
 }
 
-/** Input args for one source, fast-seeking `skip` seconds in when aligning. */
-function seekInput(input: string, skip?: number): string[] {
-  return skip && skip > 0 ? ['-ss', skip.toFixed(3), '-i', input] : ['-i', input];
+/** A `trim=start=…,` filter prefix that drops the first `skip` seconds, or '' for
+ * no trim. We trim INSIDE the filter graph (decode-and-drop) rather than with a
+ * `-ss` input seek, because the recordings (MediaRecorder WebM, piped Matroska)
+ * have no seek index, so `-ss` is unreliable and often a no-op on them. */
+function trimPrefix(skip: number | undefined): string {
+  return skip && skip > 0 ? `trim=start=${skip.toFixed(3)},` : '';
+}
+
+/** Like trimPrefix but for an audio stream. */
+function atrimPrefix(skip: number | undefined): string {
+  return skip && skip > 0 ? `atrim=start=${skip.toFixed(3)},` : '';
 }
 
 /** overlay x:y expression placing an inset in the given corner with a margin. */
@@ -155,9 +169,10 @@ function pipOverlayXY(position: PipInput['position']): string {
  *     constant frame rate (`fps`); otherwise an inset drifts progressively ahead.
  *  2. Start offset — the devices begin capturing at slightly different moments
  *     (camera/encoder warm-up), so their t=0 are different real instants. The
- *     stop is near-simultaneous, so the caller passes a per-input `skip` (derived
- *     from each file's duration) that fast-seeks each source to the start of the
- *     common overlapping window, making the layers line up frame-for-frame.
+ *     caller passes a per-input `skip` that trims each source to the start of the
+ *     common overlapping window (done with a `trim` filter, not a `-ss` seek,
+ *     which is unreliable on these index-less recordings), so the layers line up.
+ * `audio` is the bed (its own trim); when null a silent track is synthesised.
  * Output is Matroska (h264/opus); the concat step re-encodes it like any segment.
  */
 export function buildPipCompositeArgs(
@@ -166,20 +181,21 @@ export function buildPipCompositeArgs(
   audio: TimedInput | null,
   output: string,
 ): string[] {
-  const args: string[] = [...seekInput(main.input, main.skip)];
-  for (const pip of pips) args.push(...seekInput(pip.input, pip.skip));
-  if (audio) args.push(...seekInput(audio.input, audio.skip));
+  const args: string[] = ['-i', main.input];
+  for (const pip of pips) args.push('-i', pip.input);
+  if (audio) args.push('-i', audio.input);
+  else args.push('-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=48000');
+  const audioIdx = pips.length + 1;
 
-  // Reset the base to a zero start before scaling/padding to the constant-fps frame.
-  const filters: string[] = [`[0:v]setpts=PTS-STARTPTS,${SCALE_PAD}[base]`];
+  // Trim each video layer to the common window, then zero its start and force the
+  // constant frame rate so the layers stay locked together.
+  const filters: string[] = [`[0:v]${trimPrefix(main.skip)}setpts=PTS-STARTPTS,${SCALE_PAD}[base]`];
   let last = 'base';
   pips.forEach((pip, i) => {
     const inputIdx = i + 1; // main is input 0
     const width = Math.max(2, Math.round(COMPOSITE_WIDTH * pip.scale));
-    // Same temporal normalisation as the base (zero start + constant fps) so the
-    // inset stays locked to the base instead of drifting ahead.
     filters.push(
-      `[${inputIdx}:v]setpts=PTS-STARTPTS,scale=${width}:-2,setsar=1,fps=${COMPOSITE_FPS}[p${i}]`,
+      `[${inputIdx}:v]${trimPrefix(pip.skip)}setpts=PTS-STARTPTS,scale=${width}:-2,setsar=1,fps=${COMPOSITE_FPS}[p${i}]`,
     );
     const outLabel = i === pips.length - 1 ? 'v' : `t${i}`;
     filters.push(`[${last}][p${i}]overlay=${pipOverlayXY(pip.position)}:shortest=1[${outLabel}]`);
@@ -187,17 +203,11 @@ export function buildPipCompositeArgs(
   });
   const videoLabel = pips.length > 0 ? 'v' : 'base';
 
-  // Audio: the dedicated audio source if present — reset to a zero start (and
-  // resample to fill gaps) so it shares the video layers' clock. Without an audio
-  // source, fall back to the main camera's own track via an optional raw map
-  // (the '?' tolerates a silent camera, which a filter could not).
-  let audioMap: string;
-  if (audio) {
-    filters.push(`[${pips.length + 1}:a]aresample=async=1:first_pts=0,asetpts=PTS-STARTPTS[a]`);
-    audioMap = '[a]';
-  } else {
-    audioMap = '0:a:0?';
-  }
+  // Audio bed: trim to the same window, reset to zero and resample to fill gaps.
+  // (A synthesised silent source needs no trim.)
+  filters.push(
+    `[${audioIdx}:a]${audio ? atrimPrefix(audio.skip) : ''}aresample=async=1:first_pts=0,asetpts=PTS-STARTPTS[a]`,
+  );
 
   args.push(
     '-filter_complex',
@@ -205,7 +215,7 @@ export function buildPipCompositeArgs(
     '-map',
     `[${videoLabel}]`,
     '-map',
-    audioMap,
+    '[a]',
     '-c:v',
     'libx264',
     '-preset',
