@@ -59,11 +59,16 @@ model ComposedSource {
   schoolId  String
   roomId    String
   name      String
+  // The device whose sound is laid under this source (may be one of the video
+  // members or a separate sound-only device, and need not belong to the room).
+  // Null falls back to the room's audio-source device.
+  audioDeviceId String?
   createdAt DateTime @default(now())
 
-  school  School                 @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  room    Room                   @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  members ComposedSourceMember[]
+  school      School                 @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  room        Room                   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  audioDevice Device?                @relation("SourceAudioDevice", fields: [audioDeviceId], references: [id], onDelete: SetNull)
+  members     ComposedSourceMember[]
 
   @@index([schoolId])
   @@index([roomId])
@@ -194,6 +199,7 @@ model Device {
   lessonDevices LessonDevice[]
   recordings    Recording[]
   sourceMembers ComposedSourceMember[]
+  audioForSources ComposedSource[]     @relation("SourceAudioDevice")
 
   @@index([schoolId])
   @@index([roomId])
@@ -242,6 +248,9 @@ model CompositeVideo {
   status      String    @default("queued") // queued | processing | completed | failed
   sizeBytes   Int       @default(0)
   error       String?
+  // JSON diagnostics from the last build: per segment how its layers were aligned
+  // (sync tone vs duration), with detected tone onsets and applied trims.
+  syncReport  String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   completedAt DateTime?

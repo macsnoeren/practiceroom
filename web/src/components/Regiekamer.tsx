@@ -7,6 +7,7 @@ import { usePresence } from '../usePresence.js';
 import { CompositePlayer } from './CompositePlayer.js';
 import { LessonPlayer } from './LessonPlayer.js';
 import { Modal } from './Modal.js';
+import { SyncDiagnostics } from './SyncDiagnostics.js';
 
 function SaveToLibraryInline({ lessonId }: { lessonId: string }) {
   const [open, setOpen] = useState(false);
@@ -781,6 +782,10 @@ export function Regiekamer({ user }: { user: UserDto }) {
                 deviceName={(deviceId) =>
                   allDevices.find((d) => d.id === deviceId)?.name ?? 'Camera'
                 }
+              />
+              <SyncDiagnostics
+                sync={activeLessonDetail.composite?.sync ?? null}
+                deviceName={(id) => allDevices.find((d) => d.id === id)?.name ?? id}
               />
               {activeLessonDetail.composite?.status === 'completed' && (
                 <div className="recording-buttons" style={{ marginTop: '1rem', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}>

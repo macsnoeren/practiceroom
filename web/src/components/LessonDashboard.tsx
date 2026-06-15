@@ -12,6 +12,7 @@ import { formatBytes, formatWhen } from '../format.js';
 import { usePresence } from '../usePresence.js';
 import { CompositePlayer } from './CompositePlayer.js';
 import { LessonPlayer } from './LessonPlayer.js';
+import { SyncDiagnostics } from './SyncDiagnostics.js';
 import { MaterialView } from './MaterialView.js';
 
 /** Full per-lesson dashboard for staff: cameras, recording, notes, playback. */
@@ -330,6 +331,7 @@ export function LessonDashboard() {
       <div className="card">
         <CompositePlayer lessonId={id} composite={detail.composite} />
         <LessonPlayer recordings={videoRecordings} deviceName={deviceName} />
+        <SyncDiagnostics sync={detail.composite?.sync ?? null} deviceName={deviceName} />
         {detail.composite === null && videoRecordings.length === 0 && (
           <p className="muted">Nog geen opnames.</p>
         )}

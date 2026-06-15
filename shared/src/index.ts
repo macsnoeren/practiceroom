@@ -313,6 +313,9 @@ export const ComposedSourceDtoSchema = z.object({
   schoolId: z.string(),
   roomId: z.string(),
   name: z.string(),
+  // The device that provides this source's sound (null = use the room's audio
+  // source). May be a video member or a separate sound-only device.
+  audioDeviceId: z.string().nullable(),
   members: z.array(ComposedSourceMemberDtoSchema),
   createdAt: z.string(),
 });
@@ -329,6 +332,9 @@ export const ComposedSourceMemberInputSchema = z.object({
 const composedSourceBody = {
   name: z.string().trim().min(1).max(120),
   roomId: z.string().min(1),
+  // Any device may be the audio source (incl. sound-only, or outside the room);
+  // null falls back to the room's audio source.
+  audioDeviceId: z.string().min(1).nullable().optional(),
   members: z.array(ComposedSourceMemberInputSchema).min(1).max(5),
 };
 
@@ -684,10 +690,33 @@ export const COMPOSITE_STATUSES = ['queued', 'processing', 'completed', 'failed'
 export const CompositeStatusSchema = z.enum(COMPOSITE_STATUSES);
 export type CompositeStatus = (typeof COMPOSITE_STATUSES)[number];
 
+/* ---- Sync diagnostics ----------------------------------------------------- */
+
+/** How one stream of a segment was aligned during compositing. */
+export const SyncStreamReportSchema = z.object({
+  role: z.string(), // 'main' | 'pip' | 'audio' | 'single'
+  deviceId: z.string(),
+  hasAudio: z.boolean(),
+  durationS: z.number().nullable(),
+  toneOnsetS: z.number().nullable(), // detected sync-tone start, or null
+  skipS: z.number(), // seconds trimmed from the front to align
+});
+export type SyncStreamReport = z.infer<typeof SyncStreamReportSchema>;
+
+/** How one segment's layers were aligned. */
+export const SyncSegmentReportSchema = z.object({
+  segment: z.number(), // 1-based, in final order
+  method: z.enum(['tone', 'duration', 'none']),
+  streams: z.array(SyncStreamReportSchema),
+});
+export type SyncSegmentReport = z.infer<typeof SyncSegmentReportSchema>;
+
 export const CompositeVideoDtoSchema = z.object({
   status: CompositeStatusSchema,
   sizeBytes: z.number(),
   error: z.string().nullable(),
+  // Per-segment alignment diagnostics from the last build (null until built).
+  sync: z.array(SyncSegmentReportSchema).nullable(),
 });
 export type CompositeVideoDto = z.infer<typeof CompositeVideoDtoSchema>;
 

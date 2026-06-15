@@ -28,22 +28,20 @@ type MemberInput = {
  */
 async function buildMemberRows(
   schoolId: string,
-  roomId: string,
   members: MemberInput[],
 ): Promise<{ deviceId: string; role: string; position: string | null; scale: number | null; order: number }[]> {
-  const room = await prisma.room.findFirst({ where: { id: roomId, schoolId } });
-  if (!room) throw notFound('Lokaal niet gevonden');
-
+  // Any camera of the school may be a member — also ones not assigned to the
+  // source's room. (Speakers cannot be a video member.)
   const deviceIds = members.map((m) => m.deviceId);
   const devices = await prisma.device.findMany({
     where: { id: { in: deviceIds }, schoolId },
-    select: { id: true, roomId: true },
+    select: { id: true, kind: true },
   });
   const byId = new Map(devices.map((d) => [d.id, d]));
   return members.map((m, order) => {
     const device = byId.get(m.deviceId);
     if (!device) throw badRequest('Onbekende camera in de bron');
-    if (device.roomId !== roomId) throw badRequest('Camera hoort niet bij dit lokaal');
+    if (device.kind !== 'camera') throw badRequest('Alleen camera’s kunnen een beeldbron zijn');
     if (m.role === 'pip' && !m.position) throw badRequest('Een inzet heeft een hoek nodig');
     return {
       deviceId: m.deviceId,
@@ -53,6 +51,14 @@ async function buildMemberRows(
       order,
     };
   });
+}
+
+/** Validates the optional audio-source device belongs to the school. */
+async function validateAudioDevice(schoolId: string, audioDeviceId: string | null | undefined): Promise<string | null> {
+  if (!audioDeviceId) return null;
+  const device = await prisma.device.findFirst({ where: { id: audioDeviceId, schoolId } });
+  if (!device) throw badRequest('Onbekende geluidsbron');
+  return audioDeviceId;
 }
 
 export async function sourceRoutes(app: FastifyInstance): Promise<void> {
@@ -70,13 +76,17 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/sources', { preHandler: requireRole('admin', 'teacher') }, async (request, reply) => {
     const me = requireAuth(request);
     const input = CreateComposedSourceSchema.parse(request.body);
-    const memberRows = await buildMemberRows(me.schoolId, input.roomId, input.members);
+    const room = await prisma.room.findFirst({ where: { id: input.roomId, schoolId: me.schoolId } });
+    if (!room) throw notFound('Lokaal niet gevonden');
+    const memberRows = await buildMemberRows(me.schoolId, input.members);
+    const audioDeviceId = await validateAudioDevice(me.schoolId, input.audioDeviceId);
 
     const source = await prisma.composedSource.create({
       data: {
         schoolId: me.schoolId,
         roomId: input.roomId,
         name: input.name,
+        audioDeviceId,
         members: { create: memberRows },
       },
       include: { members: true },
@@ -93,7 +103,10 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
       where: { id, schoolId: me.schoolId },
     });
     if (!existing) throw notFound('Bron niet gevonden');
-    const memberRows = await buildMemberRows(me.schoolId, input.roomId, input.members);
+    const room = await prisma.room.findFirst({ where: { id: input.roomId, schoolId: me.schoolId } });
+    if (!room) throw notFound('Lokaal niet gevonden');
+    const memberRows = await buildMemberRows(me.schoolId, input.members);
+    const audioDeviceId = await validateAudioDevice(me.schoolId, input.audioDeviceId);
 
     const updated = await prisma.$transaction(async (tx) => {
       await tx.composedSourceMember.deleteMany({ where: { sourceId: id } });
@@ -102,6 +115,7 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
         data: {
           name: input.name,
           roomId: input.roomId,
+          audioDeviceId,
           members: { create: memberRows },
         },
         include: { members: true },

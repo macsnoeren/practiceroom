@@ -16,7 +16,11 @@ import {
 } from '../lib/composite.js';
 import { probeDuration, probeStreams } from '../lib/probe.js';
 import { detectToneOnset } from '../lib/tone.js';
-import { SYNC_TONE_DURATION_MS } from '@practiceroom/shared';
+import {
+  SYNC_TONE_DURATION_MS,
+  type SyncSegmentReport,
+  type SyncStreamReport,
+} from '@practiceroom/shared';
 import type { Recording } from '@prisma/client';
 import {
   brandingExists,
@@ -109,31 +113,85 @@ interface SegmentInput {
   crop: CropRect | null;
 }
 
+/** Round to milliseconds for readable diagnostics. */
+function round3(n: number): number {
+  return Math.round(n * 1000) / 1000;
+}
+
+/** How a group's streams were aligned, with the data behind the decision. */
+interface GroupAlignment {
+  method: 'tone' | 'duration' | 'none';
+  skips: Map<string, number>;
+  onset: Map<string, number | null>;
+  duration: Map<string, number | null>;
+}
+
 /**
  * Per-file front-trim (seconds) that aligns a group's independently-started
- * streams. Prefers the sync tone (frame-exact: trim each to just after its own
- * detected tone) when the group used one and it is found in EVERY track. Else it
- * aligns by duration (assumes the devices stopped together, trimming each to the
- * common window). Else no trim.
+ * streams, plus the diagnostics behind it. Prefers the sync tone (frame-exact:
+ * trim each to just after its own detected tone) when the group used one and it
+ * is found in EVERY track. Else it aligns by duration (assumes the devices
+ * stopped together, trimming each to the common window). Else no trim.
  */
-async function computeGroupSkips(paths: string[], usedSyncTone: boolean): Promise<Map<string, number>> {
+async function computeGroupAlignment(paths: string[], usedSyncTone: boolean): Promise<GroupAlignment> {
   const skips = new Map<string, number>();
+  const onset = new Map<string, number | null>();
+  const duration = new Map<string, number | null>();
+
+  // Probe durations always — used for the fallback and shown in diagnostics.
+  const durations = await Promise.all(paths.map((p) => probeDuration(p)));
+  paths.forEach((p, i) => duration.set(p, durations[i]! > 0 ? round3(durations[i]!) : null));
+
   if (usedSyncTone) {
     const onsets = await Promise.all(paths.map((p) => detectToneOnset(p)));
+    paths.forEach((p, i) => onset.set(p, onsets[i] !== null ? round3(onsets[i]!) : null));
     if (onsets.every((o) => o !== null)) {
       const toneEnd = SYNC_TONE_DURATION_MS / 1000;
-      paths.forEach((p, i) => skips.set(p, (onsets[i] as number) + toneEnd));
-      return skips;
+      paths.forEach((p, i) => skips.set(p, round3((onsets[i] as number) + toneEnd)));
+      return { method: 'tone', skips, onset, duration };
     }
+  } else {
+    paths.forEach((p) => onset.set(p, null));
   }
-  const durations = await Promise.all(paths.map((p) => probeDuration(p)));
+
   if (durations.every((d) => d > 0)) {
     const minD = Math.min(...durations);
-    paths.forEach((p, i) => skips.set(p, Math.max(0, durations[i]! - minD)));
-  } else {
-    paths.forEach((p) => skips.set(p, 0));
+    paths.forEach((p, i) => skips.set(p, round3(Math.max(0, durations[i]! - minD))));
+    return { method: 'duration', skips, onset, duration };
   }
-  return skips;
+  paths.forEach((p) => skips.set(p, 0));
+  return { method: 'none', skips, onset, duration };
+}
+
+/** Prints a readable per-segment sync summary to the worker console. */
+function logSyncReports(lessonId: string, reports: SyncSegmentReport[]): void {
+  for (const seg of reports) {
+    const parts = seg.streams.map((s) => {
+      const onset = s.toneOnsetS === null ? 'geen toon' : `toon@${s.toneOnsetS}s`;
+      const dur = s.durationS === null ? '?' : `${s.durationS}s`;
+      const noAudio = s.hasAudio ? '' : ' (geen audio)';
+      return `${s.role} ${s.deviceId.slice(-4)}: ${onset}, dur=${dur}, skip=${s.skipS}s${noAudio}`;
+    });
+    console.info(
+      `[worker] sync lesson=${lessonId} segment ${seg.segment} methode=${seg.method} | ${parts.join(' | ')}`,
+    );
+  }
+}
+
+function streamReport(
+  role: string,
+  rec: Recording,
+  path: string,
+  align: GroupAlignment,
+): SyncStreamReport {
+  return {
+    role,
+    deviceId: rec.deviceId,
+    hasAudio: rec.hasAudio,
+    durationS: align.duration.get(path) ?? null,
+    toneOnsetS: align.onset.get(path) ?? null,
+    skipS: round3(align.skips.get(path) ?? 0),
+  };
 }
 
 /**
@@ -149,7 +207,7 @@ async function buildLessonSegments(
   lessonId: string,
   completed: Recording[],
   temps: string[],
-): Promise<SegmentInput[]> {
+): Promise<{ inputs: SegmentInput[]; reports: SyncSegmentReport[] }> {
   const groups = new Map<string, Recording[]>();
   for (const r of completed) {
     const key = r.segmentGroupId ?? `solo:${r.id}`;
@@ -158,7 +216,7 @@ async function buildLessonSegments(
     else groups.set(key, [r]);
   }
 
-  const ordered: { startedAt: number; input: SegmentInput }[] = [];
+  const ordered: { startedAt: number; input: SegmentInput; streams: SyncStreamReport[]; method: GroupAlignment['method'] }[] = [];
   for (const members of groups.values()) {
     const audioRec = members.find((r) => r.isAudioTrack) ?? null;
     // Video participants: a composed source's laid-out members (one of which may
@@ -178,6 +236,8 @@ async function buildLessonSegments(
 
     let path: string;
     let crop: CropRect | null;
+    let method: GroupAlignment['method'] = 'none';
+    const streams: SyncStreamReport[] = [];
     if (pips.length > 0 && main.hasVideo) {
       // Composed source: overlay the insets onto the main camera, with the audio
       // source's sound (when present) laid under the result. Align all layers by
@@ -186,8 +246,8 @@ async function buildLessonSegments(
       const pipPaths = pips.map((p) => recordingPath(p.id));
       const audioPath = audioRec ? recordingPath(audioRec.id) : null;
       const allPaths = [mainPath, ...pipPaths, ...(audioPath ? [audioPath] : [])];
-      const skips = await computeGroupSkips(allPaths, usedSyncTone);
-      const skipOf = (p: string) => skips.get(p) ?? 0;
+      const align = await computeGroupAlignment(allPaths, usedSyncTone);
+      const skipOf = (p: string) => align.skips.get(p) ?? 0;
 
       path = composedSegmentPath(lessonId, main.id);
       await runFfmpeg(
@@ -205,15 +265,19 @@ async function buildLessonSegments(
       );
       temps.push(path);
       crop = null; // a crop does not apply to a composed frame
+      method = align.method;
+      streams.push(streamReport('main', main, mainPath, align));
+      pips.forEach((p, i) => streams.push(streamReport('pip', p, pipPaths[i]!, align)));
+      if (audioRec && audioPath) streams.push(streamReport('audio', audioRec, audioPath, align));
     } else if (audioRec && main.hasVideo) {
       // Single camera with the audio source's sound laid under it, aligned by the
       // sync tone (or duration fallback). Aligning needs a re-encode, so the
       // output then goes to an .mkv; without alignment it stays a fast .webm copy.
       const mainPath = recordingPath(main.id);
       const audioPath = recordingPath(audioRec.id);
-      const skips = await computeGroupSkips([mainPath, audioPath], usedSyncTone);
-      const vSkip = skips.get(mainPath) ?? 0;
-      const aSkip = skips.get(audioPath) ?? 0;
+      const align = await computeGroupAlignment([mainPath, audioPath], usedSyncTone);
+      const vSkip = align.skips.get(mainPath) ?? 0;
+      const aSkip = align.skips.get(audioPath) ?? 0;
       const aligned = vSkip > 0 || aSkip > 0;
       path = aligned
         ? composedSegmentPath(lessonId, main.id)
@@ -223,15 +287,30 @@ async function buildLessonSegments(
       );
       temps.push(path);
       crop = recordingCrop(main);
+      method = align.method;
+      streams.push(streamReport('main', main, mainPath, align));
+      streams.push(streamReport('audio', audioRec, audioPath, align));
     } else {
       path = await normalizeSegment(lessonId, main, temps);
       crop = recordingCrop(main);
+      method = 'none';
+      streams.push({
+        role: 'single',
+        deviceId: main.deviceId,
+        hasAudio: main.hasAudio,
+        durationS: null,
+        toneOnsetS: null,
+        skipS: 0,
+      });
     }
-    ordered.push({ startedAt: main.startedAt.getTime(), input: { path, crop } });
+    ordered.push({ startedAt: main.startedAt.getTime(), input: { path, crop }, streams, method });
   }
 
   ordered.sort((a, b) => a.startedAt - b.startedAt);
-  return ordered.map((o) => o.input);
+  return {
+    inputs: ordered.map((o) => o.input),
+    reports: ordered.map((o, i) => ({ segment: i + 1, method: o.method, streams: o.streams })),
+  };
 }
 
 /**
@@ -315,8 +394,12 @@ export async function processQueuedJob(): Promise<JobResult> {
     // stream. Segments captured as audio-only or video-without-sound are first
     // padded with a black frame / silent track so they stitch in cleanly.
     const temps: string[] = [];
+    let syncReports: SyncSegmentReport[] = [];
     try {
-      const lessonSegments = await buildLessonSegments(job.lessonId, completed, temps);
+      const built = await buildLessonSegments(job.lessonId, completed, temps);
+      const lessonSegments = built.inputs;
+      syncReports = built.reports;
+      logSyncReports(job.lessonId, syncReports);
       if (lessonSegments.length === 0) {
         await prisma.compositeVideo.update({
           where: { id: job.id },
@@ -368,6 +451,7 @@ export async function processQueuedJob(): Promise<JobResult> {
         sizeBytes: await compositeSize(job.lessonId),
         completedAt: new Date(),
         error: null,
+        syncReport: JSON.stringify(syncReports),
       },
     });
     await prisma.lesson.update({ where: { id: job.lessonId }, data: { status: 'ready' } });

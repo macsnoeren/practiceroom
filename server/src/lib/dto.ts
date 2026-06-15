@@ -14,6 +14,7 @@ import type {
   School,
   User,
 } from '@prisma/client';
+import { SyncSegmentReportSchema } from '@practiceroom/shared';
 import type {
   AuditLogDto,
   ComposedSourceDto,
@@ -244,6 +245,7 @@ export function toComposedSourceDto(source: ComposedSourceRow): ComposedSourceDt
     schoolId: source.schoolId,
     roomId: source.roomId,
     name: source.name,
+    audioDeviceId: source.audioDeviceId,
     members: [...source.members]
       .sort((a, b) => a.order - b.order)
       .map((m) => ({
@@ -295,7 +297,19 @@ export function toCompositeVideoDto(composite: CompositeVideo): CompositeVideoDt
     status: composite.status as CompositeStatus,
     sizeBytes: composite.sizeBytes,
     error: composite.error,
+    sync: parseSyncReport(composite.syncReport),
   };
+}
+
+/** Parse the stored sync diagnostics JSON, tolerating older/blank rows. */
+function parseSyncReport(raw: string | null): CompositeVideoDto['sync'] {
+  if (!raw) return null;
+  try {
+    const parsed = SyncSegmentReportSchema.array().safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
 }
 
 export function toLessonDetailDto(lesson: LessonDetailRow): LessonDetailDto {

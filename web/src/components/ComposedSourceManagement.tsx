@@ -95,6 +95,7 @@ export function ComposedSourceManagement() {
                         {deviceName(p.deviceId)} ({p.position ? POSITION_LABELS[p.position] : ''})
                       </span>
                     ))}
+                    {' · '}🎙 {s.audioDeviceId ? deviceName(s.audioDeviceId) : 'geluidsbron van lokaal'}
                   </div>
                 </div>
                 <button type="button" className="linkbtn danger" onClick={() => remove(s.id)}>
@@ -141,16 +142,24 @@ function SourceForm({
   const [roomId, setRoomId] = useState(rooms[0]?.id ?? '');
   const [mainDeviceId, setMainDeviceId] = useState('');
   const [insets, setInsets] = useState<Inset[]>([]);
+  const [audioDeviceId, setAudioDeviceId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // Cameras of the chosen room. The audio source is included too: one device can
-  // be both the room's microphone and a camera in the composition.
-  const roomCameras = devices.filter((d) => d.roomId === roomId);
+  // Any camera of the school can be a member or the audio source — also ones not
+  // assigned to this source's room (speakers excluded). The room only decides
+  // where the source appears in the control room.
+  const cameras = devices.filter((d) => d.kind === 'camera');
+  const roomName = (id: string) => rooms.find((r) => r.id === id)?.name ?? '';
   // Cameras still available for an inset (not the main, not already chosen).
   const usedIds = new Set([mainDeviceId, ...insets.map((i) => i.deviceId)]);
-  const availableForInset = roomCameras.filter((d) => !usedIds.has(d.id));
-  const camLabel = (d: DeviceDto) => (d.isAudioSource ? `${d.name} 🎙` : d.name);
+  const availableForInset = cameras.filter((d) => !usedIds.has(d.id));
+  const camLabel = (d: DeviceDto) => {
+    const extras = [d.isAudioSource ? '🎙' : '', d.roomId ? `· ${roomName(d.roomId)}` : '· geen lokaal']
+      .filter(Boolean)
+      .join(' ');
+    return extras ? `${d.name} ${extras}` : d.name;
+  };
 
   function addInset() {
     const next = availableForInset[0];
@@ -178,6 +187,7 @@ function SourceForm({
       await api.createComposedSource({
         name: name.trim(),
         roomId,
+        audioDeviceId: audioDeviceId || null,
         members: [
           { deviceId: mainDeviceId, role: 'main' as const },
           ...insets.map((i) => ({
@@ -201,16 +211,8 @@ function SourceForm({
       <label htmlFor="src-name">Naam (bijv. &ldquo;Overzicht + voet&rdquo;)</label>
       <input id="src-name" value={name} onChange={(e) => setName(e.target.value)} />
 
-      <label htmlFor="src-room">Lokaal</label>
-      <select
-        id="src-room"
-        value={roomId}
-        onChange={(e) => {
-          setRoomId(e.target.value);
-          setMainDeviceId('');
-          setInsets([]);
-        }}
-      >
+      <label htmlFor="src-room">Lokaal (waar deze bron in de regiekamer verschijnt)</label>
+      <select id="src-room" value={roomId} onChange={(e) => setRoomId(e.target.value)}>
         {rooms.map((r) => (
           <option key={r.id} value={r.id}>
             {r.name}
@@ -228,12 +230,26 @@ function SourceForm({
         }}
       >
         <option value="">— kies —</option>
-        {roomCameras.map((d) => (
+        {cameras.map((d) => (
           <option key={d.id} value={d.id}>
             {camLabel(d)}
           </option>
         ))}
       </select>
+
+      <label htmlFor="src-audio">Geluidsbron</label>
+      <select id="src-audio" value={audioDeviceId} onChange={(e) => setAudioDeviceId(e.target.value)}>
+        <option value="">— geluidsbron van het lokaal —</option>
+        {cameras.map((d) => (
+          <option key={d.id} value={d.id}>
+            {camLabel(d)}
+          </option>
+        ))}
+      </select>
+      <p className="muted">
+        Welk apparaat het geluid levert onder deze bron. Mag een geluid-only bron zijn of een
+        apparaat buiten dit lokaal. Leeg = de geluidsbron van het lokaal.
+      </p>
 
       <div style={{ marginTop: '0.75rem' }}>
         <strong>Inzetcamera&rsquo;s</strong>
@@ -248,7 +264,7 @@ function SourceForm({
               onChange={(e) => updateInset(idx, { deviceId: e.target.value })}
               aria-label="Inzetcamera"
             >
-              {roomCameras
+              {cameras
                 .filter((d) => d.id === inset.deviceId || !usedIds.has(d.id))
                 .map((d) => (
                   <option key={d.id} value={d.id}>

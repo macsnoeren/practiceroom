@@ -454,6 +454,9 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
         layoutScale: number | null;
       };
       const targets: StartTarget[] = [];
+      // A composed source can name its own audio-source device; otherwise we fall
+      // back to the room's audio source below.
+      let explicitAudioDeviceId: string | null = null;
 
       if (deviceId) {
         if (!lesson.devices.some((d) => d.deviceId === deviceId)) {
@@ -469,6 +472,7 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
           include: { members: { orderBy: { order: 'asc' } } },
         });
         if (!source) throw notFound('Samengestelde bron niet gevonden');
+        explicitAudioDeviceId = source.audioDeviceId;
         const main = source.members.find((m) => m.role === 'main');
         if (!main) throw badRequest('De bron heeft geen hoofdcamera');
         if (!app.presence.isOnline(main.deviceId)) {
@@ -500,14 +504,19 @@ export async function lessonRoutes(app: FastifyInstance): Promise<void> {
       const segmentGroupId = randomUUID();
       await prisma.lesson.update({ where: { id }, data: { status: 'recording' } });
 
-      // The room's audio source: its sound is laid under the segment. When it is
-      // also a composed-source member (one device = camera + mic), that single
-      // recording doubles as the audio track — a device cannot record twice.
-      const audioSource = lesson.roomId
+      // The audio source whose sound is laid under the segment: the composed
+      // source's own choice when set, otherwise the room's audio source. When it
+      // is also a video member (one device = camera + mic), that single recording
+      // doubles as the audio track — a device cannot record twice.
+      const audioSource = explicitAudioDeviceId
         ? await prisma.device.findFirst({
-            where: { schoolId: me.schoolId, roomId: lesson.roomId, isAudioSource: true },
+            where: { id: explicitAudioDeviceId, schoolId: me.schoolId },
           })
-        : null;
+        : lesson.roomId
+          ? await prisma.device.findFirst({
+              where: { schoolId: me.schoolId, roomId: lesson.roomId, isAudioSource: true },
+            })
+          : null;
       const audioSourceIsMember = !!audioSource && targets.some((t) => t.deviceId === audioSource.id);
 
       const lessonDeviceIds = new Set(lesson.devices.map((d) => d.deviceId));
