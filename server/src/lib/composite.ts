@@ -1,6 +1,8 @@
 export const COMPOSITE_WIDTH = 1280;
 export const COMPOSITE_HEIGHT = 720;
-export const COMPOSITE_FPS = 30;
+// 60 fps halves the per-frame quantisation when aligning independently-captured
+// cameras (≈8 ms instead of ≈16 ms), at the cost of more CPU and larger files.
+export const COMPOSITE_FPS = 60;
 
 /**
  * Builds ffmpeg arguments (excluding the binary itself) that concatenate the
