@@ -66,6 +66,17 @@ export function DeviceManagement() {
     }
   }
 
+  // Calibrate a device's video offset (ms its video lags its audio).
+  async function setVideoOffset(id: string, videoOffsetMs: number) {
+    setError(null);
+    try {
+      await api.updateDevice(id, { videoOffsetMs: Math.max(-2000, Math.min(2000, videoOffsetMs)) });
+      await refresh();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Video-offset instellen mislukt');
+    }
+  }
+
   async function regenerate(id: string) {
     setError(null);
     try {
@@ -128,6 +139,7 @@ export function DeviceManagement() {
               <th>Naam</th>
               <th>Lokaal</th>
               <th>Geluidsbron</th>
+              <th>Video-offset</th>
               <th>Status</th>
               <th>Live</th>
               <th></th>
@@ -170,6 +182,25 @@ export function DeviceManagement() {
                         />{' '}
                         🎙
                       </label>
+                    )}
+                  </td>
+                  <td>
+                    {d.kind === 'speaker' ? (
+                      <span className="muted">—</span>
+                    ) : (
+                      <input
+                        key={`vo-${d.id}-${d.videoOffsetMs}`}
+                        type="number"
+                        step={10}
+                        defaultValue={d.videoOffsetMs}
+                        style={{ width: '5rem' }}
+                        title="ms dat het beeld van dit apparaat achterloopt op het geluid (positief = beeld wordt vooruitgehaald)"
+                        aria-label={`Video-offset in ms voor ${d.name}`}
+                        onBlur={(e) => {
+                          const v = Math.round(Number(e.target.value) || 0);
+                          if (v !== d.videoOffsetMs) void setVideoOffset(d.id, v);
+                        }}
+                      />
                     )}
                   </td>
                   <td>

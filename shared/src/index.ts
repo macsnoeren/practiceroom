@@ -273,6 +273,8 @@ export const DeviceDtoSchema = z.object({
   kind: DeviceKindSchema,
   roomId: z.string().nullable(),
   isAudioSource: z.boolean(),
+  // Calibration: ms this device's video lags its audio (positive = behind).
+  videoOffsetMs: z.number().int(),
   paired: z.boolean(),
   pairedAt: z.string().nullable(),
   lastSeenAt: z.string().nullable(),
@@ -280,10 +282,12 @@ export const DeviceDtoSchema = z.object({
 });
 export type DeviceDto = z.infer<typeof DeviceDtoSchema>;
 
-/** Staff assigns a device to a room and/or marks it the room's audio source. */
+/** Staff assigns a device to a room, marks it the audio source, or calibrates
+ * its video offset (ms its video lags its audio; positive = behind). */
 export const UpdateDeviceSchema = z.object({
   roomId: z.string().min(1).nullable().optional(),
   isAudioSource: z.boolean().optional(),
+  videoOffsetMs: z.number().int().min(-2000).max(2000).optional(),
 });
 export type UpdateDeviceInput = z.infer<typeof UpdateDeviceSchema>;
 

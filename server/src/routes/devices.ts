@@ -103,6 +103,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
           where: { id },
           data: {
             ...(input.roomId !== undefined ? { roomId: input.roomId } : {}),
+            ...(input.videoOffsetMs !== undefined ? { videoOffsetMs: input.videoOffsetMs } : {}),
             isAudioSource: nextIsAudioSource,
           },
         });

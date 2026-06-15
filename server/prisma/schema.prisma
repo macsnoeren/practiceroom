@@ -187,6 +187,10 @@ model Device {
   // whose sound is laid under every video segment recorded in that room.
   roomId           String?
   isAudioSource    Boolean   @default(false)
+  // Calibration: how many ms this device's video runs behind its audio. The
+  // composite aligns on audio (the sync tone), then advances this device's video
+  // by this much to cancel its capture-chain A/V skew. Positive = video lags.
+  videoOffsetMs    Int       @default(0)
   pairingCode      String?   @unique // set while waiting to pair, cleared after
   pairingExpiresAt DateTime?
   tokenHash        String?   @unique // sha256 of the device token, set on pairing

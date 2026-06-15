@@ -183,6 +183,7 @@ function streamReport(
   rec: Recording,
   path: string,
   align: GroupAlignment,
+  skipS: number,
 ): SyncStreamReport {
   return {
     role,
@@ -190,7 +191,7 @@ function streamReport(
     hasAudio: rec.hasAudio,
     durationS: align.duration.get(path) ?? null,
     toneOnsetS: align.onset.get(path) ?? null,
-    skipS: round3(align.skips.get(path) ?? 0),
+    skipS: round3(skipS),
   };
 }
 
@@ -215,6 +216,18 @@ async function buildLessonSegments(
     if (list) list.push(r);
     else groups.set(key, [r]);
   }
+
+  // Per-device video calibration: ms the device's video lags its audio. The
+  // composite aligns on audio, then advances each video layer by this to cancel
+  // its capture-chain A/V skew. Applied to video layers only — never the audio.
+  const deviceIds = [...new Set(completed.map((r) => r.deviceId))];
+  const devices = await prisma.device.findMany({
+    where: { id: { in: deviceIds } },
+    select: { id: true, videoOffsetMs: true },
+  });
+  const offsetSeconds = new Map(devices.map((d) => [d.id, d.videoOffsetMs / 1000]));
+  const videoSkip = (base: number, deviceId: string) =>
+    Math.max(0, base + (offsetSeconds.get(deviceId) ?? 0));
 
   const ordered: { startedAt: number; input: SegmentInput; streams: SyncStreamReport[]; method: GroupAlignment['method'] }[] = [];
   for (const members of groups.values()) {
@@ -247,28 +260,32 @@ async function buildLessonSegments(
       const audioPath = audioRec ? recordingPath(audioRec.id) : null;
       const allPaths = [mainPath, ...pipPaths, ...(audioPath ? [audioPath] : [])];
       const align = await computeGroupAlignment(allPaths, usedSyncTone);
-      const skipOf = (p: string) => align.skips.get(p) ?? 0;
+      // Video layers get the audio-aligned skip plus their device's offset; the
+      // audio bed keeps the plain audio-aligned skip.
+      const mainSkip = videoSkip(align.skips.get(mainPath) ?? 0, main.deviceId);
+      const pipSkips = pips.map((p, i) => videoSkip(align.skips.get(pipPaths[i]!) ?? 0, p.deviceId));
+      const audioSkip = audioPath ? (align.skips.get(audioPath) ?? 0) : 0;
 
       path = composedSegmentPath(lessonId, main.id);
       await runFfmpeg(
         buildPipCompositeArgs(
-          { input: mainPath, skip: skipOf(mainPath) },
+          { input: mainPath, skip: mainSkip },
           pips.map((p, i) => ({
             input: pipPaths[i]!,
             position: (p.layoutPosition ?? 'bottom-right') as PipInput['position'],
             scale: p.layoutScale ?? 0.28,
-            skip: skipOf(pipPaths[i]!),
+            skip: pipSkips[i]!,
           })),
-          audioPath ? { input: audioPath, skip: skipOf(audioPath) } : null,
+          audioPath ? { input: audioPath, skip: audioSkip } : null,
           path,
         ),
       );
       temps.push(path);
       crop = null; // a crop does not apply to a composed frame
       method = align.method;
-      streams.push(streamReport('main', main, mainPath, align));
-      pips.forEach((p, i) => streams.push(streamReport('pip', p, pipPaths[i]!, align)));
-      if (audioRec && audioPath) streams.push(streamReport('audio', audioRec, audioPath, align));
+      streams.push(streamReport('main', main, mainPath, align, mainSkip));
+      pips.forEach((p, i) => streams.push(streamReport('pip', p, pipPaths[i]!, align, pipSkips[i]!)));
+      if (audioRec && audioPath) streams.push(streamReport('audio', audioRec, audioPath, align, audioSkip));
     } else if (audioRec && main.hasVideo) {
       // Single camera with the audio source's sound laid under it, aligned by the
       // sync tone (or duration fallback). Aligning needs a re-encode, so the
@@ -276,7 +293,7 @@ async function buildLessonSegments(
       const mainPath = recordingPath(main.id);
       const audioPath = recordingPath(audioRec.id);
       const align = await computeGroupAlignment([mainPath, audioPath], usedSyncTone);
-      const vSkip = align.skips.get(mainPath) ?? 0;
+      const vSkip = videoSkip(align.skips.get(mainPath) ?? 0, main.deviceId);
       const aSkip = align.skips.get(audioPath) ?? 0;
       const aligned = vSkip > 0 || aSkip > 0;
       path = aligned
@@ -288,8 +305,8 @@ async function buildLessonSegments(
       temps.push(path);
       crop = recordingCrop(main);
       method = align.method;
-      streams.push(streamReport('main', main, mainPath, align));
-      streams.push(streamReport('audio', audioRec, audioPath, align));
+      streams.push(streamReport('main', main, mainPath, align, vSkip));
+      streams.push(streamReport('audio', audioRec, audioPath, align, aSkip));
     } else {
       path = await normalizeSegment(lessonId, main, temps);
       crop = recordingCrop(main);

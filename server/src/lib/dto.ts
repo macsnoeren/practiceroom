@@ -131,6 +131,7 @@ export function toDeviceDto(device: Device): DeviceDto {
     kind: device.kind as DeviceDto['kind'],
     roomId: device.roomId,
     isAudioSource: device.isAudioSource,
+    videoOffsetMs: device.videoOffsetMs,
     paired: device.tokenHash !== null,
     pairedAt: device.pairedAt?.toISOString() ?? null,
     lastSeenAt: device.lastSeenAt?.toISOString() ?? null,
