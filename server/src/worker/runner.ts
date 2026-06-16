@@ -96,17 +96,14 @@ async function normalizeSegment(
   temps: string[],
 ): Promise<string> {
   const src = recordingPath(recording.id);
-  if (recording.hasVideo && recording.hasAudio) return src;
-  if (!recording.hasVideo && !recording.hasAudio) return src; // nothing to pad
+  const out = normalizedSegmentPath(lessonId, recording.id);
 
-  const fixed = normalizedSegmentPath(lessonId, recording.id);
-  if (!recording.hasVideo) {
-    await runFfmpeg(buildBlackVideoArgs(src, fixed));
-  } else {
-    await runFfmpeg(buildSilentAudioArgs(src, fixed));
-  }
-  temps.push(fixed);
-  return fixed;
+  // Stage 1: Harden every recording. Re-encode to a clean CFR file with a fresh index.
+  // This ensures that subsequent 'trim' filters in buildPipCompositeArgs actually bite,
+  // especially for the Pi-agent's Matroska-pipe files which lack indices.
+  await runFfmpeg(buildCanonicalExternalArgs(src, out, recording.hasVideo, recording.hasAudio));
+  temps.push(out);
+  return out;
 }
 
 /** One concat input: the segment file on disk and its optional crop rectangle. */
@@ -277,6 +274,11 @@ async function buildLessonSegments(
     const main = videoMembers.find((r) => r.layoutRole === 'main') ?? videoMembers[0]!;
     const pips = videoMembers.filter((r) => r.layoutRole === 'pip' && r.hasVideo);
 
+    // Harden all participant streams first to ensure they have indices/CFR for alignment.
+    const mainPath = await normalizeSegment(lessonId, main, temps);
+    const pipPaths = await Promise.all(pips.map((p) => normalizeSegment(lessonId, p, temps)));
+    const audioPath = audioRec ? await normalizeSegment(lessonId, audioRec, temps) : null;
+
     const usedSyncTone = members.some((r) => r.syncTone);
 
     let path: string;
@@ -287,9 +289,6 @@ async function buildLessonSegments(
       // Composed source: overlay the insets onto the main camera, with the audio
       // source's sound (when present) laid under the result. Align all layers by
       // the sync tone (or duration as a fallback) so they line up frame-exactly.
-      const mainPath = recordingPath(main.id);
-      const pipPaths = pips.map((p) => recordingPath(p.id));
-      const audioPath = audioRec ? recordingPath(audioRec.id) : null;
       const allPaths = [mainPath, ...pipPaths, ...(audioPath ? [audioPath] : [])];
       const align = await computeGroupAlignment(allPaths, usedSyncTone);
       // The audio→video start gap only matters when we transferred an audio-
@@ -349,8 +348,6 @@ async function buildLessonSegments(
       // Single camera with the audio source's sound laid under it, aligned by the
       // sync tone (or duration fallback). Aligning needs a re-encode, so the
       // output then goes to an .mkv; without alignment it stays a fast .webm copy.
-      const mainPath = recordingPath(main.id);
-      const audioPath = recordingPath(audioRec.id);
       const align = await computeGroupAlignment([mainPath, audioPath], usedSyncTone);
       const vAvOff = align.method === 'tone' ? (align.avOffset.get(mainPath) ?? 0) : 0;
       const vSkip = videoSkip(align.skips.get(mainPath) ?? 0, main.deviceId, vAvOff);
@@ -368,7 +365,7 @@ async function buildLessonSegments(
       streams.push(streamReport('main', main, mainPath, align, vSkip));
       streams.push(streamReport('audio', audioRec, audioPath, align, aSkip));
     } else {
-      path = await normalizeSegment(lessonId, main, temps);
+      path = mainPath;
       crop = recordingCrop(main);
       method = 'none';
       streams.push({
