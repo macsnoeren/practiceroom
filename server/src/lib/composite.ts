@@ -70,12 +70,15 @@ export function buildMuxVideoOverAudioArgs(
     ];
   }
 
-  // Use filter-based trimming for frame-accuracy on the hardened MP4 files.
+  // Use input seeking (-ss) for reliability and accurate duration.
+  // This is frame-accurate because the Stage 1 files are All-Intra (-g 1).
   return [
+    ...(vSkip > 0 ? ['-ss', vSkip.toFixed(3)] : []),
     '-i', video.input,
+    ...(aSkip > 0 ? ['-ss', aSkip.toFixed(3)] : []),
     '-i', audio.input,
     '-filter_complex',
-    `[0:v]${videoAlignChain(vSkip)}[v];` + `[1:a]${audioAlignChain(aSkip)}[a]`,
+    `[0:v]${videoAlignChain()}[v];` + `[1:a]${audioAlignChain()}[a]`,
     '-map', '[v]',
     '-map', '[a]',
     '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
@@ -131,25 +134,16 @@ export interface TimedInput {
 }
 
 /**
- * Video filter prefix that zeroes the timeline and, when a `skip` is given, trims
- * the first `skip` seconds off the front. Order matters: we first reset to zero
- * and force a constant frame rate (fps) to get a clean timeline, then trim on
- * that timeline, and finally rebase the kept part to zero.
+ * Video filter prefix that zeroes the timeline and forces a constant frame rate.
+ * Trimming is handled via -ss at the demuxer level for better duration reliability.
  */
-function videoAlignChain(skip?: number): string {
-  const base = `setpts=PTS-STARTPTS,fps=${COMPOSITE_FPS}`;
-  return skip && skip > 0
-    ? `${base},trim=start=${skip.toFixed(3)},setpts=PTS-STARTPTS`
-    : base;
+function videoAlignChain(): string {
+  return `setpts=PTS-STARTPTS,fps=${COMPOSITE_FPS}`;
 }
 
-/** Audio counterpart of videoAlignChain: resample to a continuous timeline first
- * (the audio analogue of `fps`) so `atrim` actually cuts, then rebase to zero. */
-function audioAlignChain(skip?: number): string {
-  const base = `asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0`;
-  return skip && skip > 0
-    ? `${base},atrim=start=${skip.toFixed(3)},asetpts=PTS-STARTPTS`
-    : base;
+/** Audio counterpart of videoAlignChain: resample to a continuous timeline. */
+function audioAlignChain(): string {
+  return `asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0`;
 }
 
 /** overlay x:y expression placing an inset in the given corner with a margin. */
@@ -191,9 +185,20 @@ export function buildPipCompositeArgs(
   audio: TimedInput | null,
   output: string,
 ): string[] {
-  const args: string[] = ['-i', main.input];
-  for (const pip of pips) args.push('-i', pip.input);
+  const args: string[] = [];
+  // Main seek
+  if (main.skip && main.skip > 0) args.push('-ss', main.skip.toFixed(3));
+  args.push('-i', main.input);
+
+  // PiP seeks
+  for (const pip of pips) {
+    if (pip.skip && pip.skip > 0) args.push('-ss', pip.skip.toFixed(3));
+    args.push('-i', pip.input);
+  }
+
+  // Audio seek
   if (audio) {
+    if (audio.skip && audio.skip > 0) args.push('-ss', audio.skip.toFixed(3));
     args.push('-i', audio.input);
   } else {
     args.push('-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=48000');
@@ -201,23 +206,21 @@ export function buildPipCompositeArgs(
 
   const audioIdx = pips.length + 1;
 
-  // Trim each video layer to the common window. This is now frame-accurate
-  // because the input files were hardened to CFR MP4s in Stage 1.
-  const filters: string[] = [`[0:v]${videoAlignChain(main.skip)},${SCALE_PAD}[base]`];
+  const filters: string[] = [`[0:v]${videoAlignChain()},${SCALE_PAD}[base]`];
   let last = 'base';
   pips.forEach((pip, i) => {
     const inputIdx = i + 1; // main is input 0
     const width = Math.max(2, Math.round(COMPOSITE_WIDTH * pip.scale));
-    filters.push(`[${inputIdx}:v]${videoAlignChain(pip.skip)},scale=${width}:-2,setsar=1,fps=${COMPOSITE_FPS}[p${i}]`);
+    filters.push(`[${inputIdx}:v]${videoAlignChain()},scale=${width}:-2,setsar=1,fps=${COMPOSITE_FPS}[p${i}]`);
     const outLabel = i === pips.length - 1 ? 'v' : `t${i}`;
     filters.push(`[${last}][p${i}]overlay=${pipOverlayXY(pip.position)}:shortest=1[${outLabel}]`);
     last = outLabel;
   });
   const videoLabel = pips.length > 0 ? 'v' : 'base';
 
-  // Audio bed: apply accurate filter-based trimming.
+  // Audio bed: seeking is handled via -ss.
   filters.push(
-    `[${audioIdx}:a]${audio ? audioAlignChain(audio.skip) : 'asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0'}[a]`,
+    `[${audioIdx}:a]${audio ? audioAlignChain() : 'asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0'}[a]`,
   );
 
   args.push(
@@ -288,6 +291,7 @@ export function buildCanonicalExternalArgs(
     '48000',
     '-movflags',
     '+faststart',
+    '-g', '1', // All-Intra: every frame is a keyframe for perfect Stage 2 seeking.
     '-shortest',
     '-y',
     output,
