@@ -329,6 +329,16 @@ async function buildLessonSegments(
           path,
         ),
       );
+      // Sanity check: a working front-trim makes the output ≈ shortest trimmed
+      // layer. If it instead matches the full source length, trim did not bite.
+      const outDur = await probeDuration(path);
+      const mainTrimmed = (align.duration.get(mainPath) ?? 0) - mainSkip;
+      const pipTrimmed = (align.duration.get(pipPaths[0]!) ?? 0) - (pipSkips[0] ?? 0);
+      console.info(
+        `[worker] pip-built dur=${round3(outDur)}s | expected≈${round3(Math.min(mainTrimmed, pipTrimmed))}s ` +
+          `(main ${align.duration.get(mainPath)}-${round3(mainSkip)}=${round3(mainTrimmed)}, ` +
+          `pip ${align.duration.get(pipPaths[0]!)}-${round3(pipSkips[0] ?? 0)}=${round3(pipTrimmed)})`,
+      );
       temps.push(path);
       crop = null; // a crop does not apply to a composed frame
       method = align.method;
