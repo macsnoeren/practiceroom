@@ -130,27 +130,28 @@ export interface TimedInput {
 }
 
 /**
- * Video filter prefix (ending in a comma) that zeroes the timeline and, when a
- * `skip` is given, trims the first `skip` seconds off the front.
+ * Video filter prefix that zeroes the timeline and, when a `skip` is given, trims
+ * the first `skip` seconds off the front.
  *
- * The leading `setpts=PTS-STARTPTS` is essential: these recordings (MediaRecorder
- * WebM, piped Matroska) can have video timestamps that don't start at 0, so a
- * bare `trim=start=N` would cut from the wrong origin (or, if the first PTS is
- * already past N, cut nothing). Zeroing first makes `trim` cut exactly N seconds
- * from the true start; a second zeroing rebases the kept part to 0. We trim in
- * the filter graph (decode-and-drop) rather than via a `-ss` seek, which is
- * unreliable on these index-less files.
+ * Order matters. These recordings (MediaRecorder WebM, piped Matroska) decode to
+ * frames whose timestamps `trim` cannot cut on — a bare `setpts,trim=start=N`
+ * no-ops and the layer stays full length. So we first force a constant frame rate
+ * (`fps`), which rebuilds a clean monotonic CFR timeline (0, 1/fps, 2/fps, …);
+ * `trim=start=N` then cuts reliably on that, and a final `setpts` rebases the
+ * kept part to zero. (A bare `-ss` seek is just as unreliable on these
+ * index-less files, which is why we regularize-then-trim in the graph.)
  */
 function videoAlignChain(skip: number | undefined): string {
   return skip && skip > 0
-    ? `setpts=PTS-STARTPTS,trim=start=${skip.toFixed(3)},setpts=PTS-STARTPTS`
+    ? `setpts=PTS-STARTPTS,fps=${COMPOSITE_FPS},trim=start=${skip.toFixed(3)},setpts=PTS-STARTPTS`
     : `setpts=PTS-STARTPTS`;
 }
 
-/** Audio counterpart of videoAlignChain (no trailing comma). */
+/** Audio counterpart of videoAlignChain: resample to a continuous timeline first
+ * (the audio analogue of `fps`) so `atrim` actually cuts, then rebase to zero. */
 function audioAlignChain(skip: number | undefined): string {
   return skip && skip > 0
-    ? `asetpts=PTS-STARTPTS,atrim=start=${skip.toFixed(3)},asetpts=PTS-STARTPTS`
+    ? `asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0,atrim=start=${skip.toFixed(3)},asetpts=PTS-STARTPTS`
     : `asetpts=PTS-STARTPTS`;
 }
 
