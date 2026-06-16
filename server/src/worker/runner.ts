@@ -14,7 +14,7 @@ import {
   type CropRect,
   type PipInput,
 } from '../lib/composite.js';
-import { probeDuration, probeStreams } from '../lib/probe.js';
+import { probeAvOffset, probeDuration, probeStreams } from '../lib/probe.js';
 import { detectToneOnset, type ToneDetection } from '../lib/tone.js';
 import {
   SYNC_TONE_DURATION_MS,
@@ -128,6 +128,10 @@ interface GroupAlignment {
   duration: Map<string, number | null>;
   riseMs: Map<string, number | null>;
   dominance: Map<string, number | null>;
+  /** Per-file audio/video start offset (firstVideoPts − firstAudioPts, seconds).
+   * The chirp is detected in audio but video is trimmed on its own re-zeroed
+   * timeline, so this must be subtracted from a tone-based video skip. */
+  avOffset: Map<string, number>;
 }
 
 /**
@@ -143,15 +147,22 @@ async function computeGroupAlignment(paths: string[], usedSyncTone: boolean): Pr
   const duration = new Map<string, number | null>();
   const riseMs = new Map<string, number | null>();
   const dominance = new Map<string, number | null>();
+  const avOffset = new Map<string, number>();
   for (const p of paths) {
     onset.set(p, null);
     riseMs.set(p, null);
     dominance.set(p, null);
+    avOffset.set(p, 0);
   }
 
   // Probe durations always — used for the fallback and shown in diagnostics.
   const durations = await Promise.all(paths.map((p) => probeDuration(p)));
   paths.forEach((p, i) => duration.set(p, durations[i]! > 0 ? round3(durations[i]!) : null));
+  // Probe each file's audio/video start offset — the Pi agent's camera can start
+  // seconds after its audio, which we must cancel when trimming video by an
+  // audio-detected chirp.
+  const avOffsets = await Promise.all(paths.map((p) => probeAvOffset(p)));
+  paths.forEach((p, i) => avOffset.set(p, round3(avOffsets[i]!)));
 
   if (usedSyncTone) {
     const detections = await Promise.all(paths.map((p) => detectToneOnset(p)));
@@ -166,17 +177,17 @@ async function computeGroupAlignment(paths: string[], usedSyncTone: boolean): Pr
     if (detections.every((d) => d !== null)) {
       const toneEnd = SYNC_TONE_DURATION_MS / 1000;
       paths.forEach((p, i) => skips.set(p, round3((detections[i] as ToneDetection).onsetS + toneEnd)));
-      return { method: 'tone', skips, onset, duration, riseMs, dominance };
+      return { method: 'tone', skips, onset, duration, riseMs, dominance, avOffset };
     }
   }
 
   if (durations.every((d) => d > 0)) {
     const minD = Math.min(...durations);
     paths.forEach((p, i) => skips.set(p, round3(Math.max(0, durations[i]! - minD))));
-    return { method: 'duration', skips, onset, duration, riseMs, dominance };
+    return { method: 'duration', skips, onset, duration, riseMs, dominance, avOffset };
   }
   paths.forEach((p) => skips.set(p, 0));
-  return { method: 'none', skips, onset, duration, riseMs, dominance };
+  return { method: 'none', skips, onset, duration, riseMs, dominance, avOffset };
 }
 
 /** Prints a readable per-segment sync summary to the worker console. */
@@ -244,8 +255,11 @@ async function buildLessonSegments(
     select: { id: true, videoOffsetMs: true },
   });
   const offsetSeconds = new Map(devices.map((d) => [d.id, d.videoOffsetMs / 1000]));
-  const videoSkip = (base: number, deviceId: string) =>
-    Math.max(0, base + (offsetSeconds.get(deviceId) ?? 0));
+  // A video layer's front-trim: the audio-aligned skip, advanced by the device's
+  // calibration offset, and pulled back by the file's own audio→video start gap
+  // (so an audio-detected chirp lands on the right video frame). Never negative.
+  const videoSkip = (base: number, deviceId: string, avOff = 0) =>
+    Math.max(0, base + (offsetSeconds.get(deviceId) ?? 0) - avOff);
 
   const ordered: { startedAt: number; input: SegmentInput; streams: SyncStreamReport[]; method: GroupAlignment['method'] }[] = [];
   for (const members of groups.values()) {
@@ -278,10 +292,20 @@ async function buildLessonSegments(
       const audioPath = audioRec ? recordingPath(audioRec.id) : null;
       const allPaths = [mainPath, ...pipPaths, ...(audioPath ? [audioPath] : [])];
       const align = await computeGroupAlignment(allPaths, usedSyncTone);
-      // Video layers get the audio-aligned skip plus their device's offset; the
-      // audio bed keeps the plain audio-aligned skip.
-      const mainSkip = videoSkip(align.skips.get(mainPath) ?? 0, main.deviceId);
-      const pipSkips = pips.map((p, i) => videoSkip(align.skips.get(pipPaths[i]!) ?? 0, p.deviceId));
+      // The audio→video start gap only matters when we transferred an audio-
+      // detected onset onto the video (the tone method); duration alignment trims
+      // the whole file, so no per-stream gap applies.
+      const avOff = (p: string) => (align.method === 'tone' ? (align.avOffset.get(p) ?? 0) : 0);
+      console.info(
+        `[worker] av-offset lesson=${lessonId} | ` +
+          allPaths.map((p) => `${p.slice(-16)}=${align.avOffset.get(p) ?? 0}s`).join(' | '),
+      );
+      // Video layers get the audio-aligned skip plus their device's offset, minus
+      // the file's audio→video gap; the audio bed keeps the plain audio-aligned skip.
+      const mainSkip = videoSkip(align.skips.get(mainPath) ?? 0, main.deviceId, avOff(mainPath));
+      const pipSkips = pips.map((p, i) =>
+        videoSkip(align.skips.get(pipPaths[i]!) ?? 0, p.deviceId, avOff(pipPaths[i]!)),
+      );
       const audioSkip = audioPath ? (align.skips.get(audioPath) ?? 0) : 0;
       // The bed: the dedicated audio source, else the main camera's own audio
       // (trimmed to the audio-aligned window), else a silent track.
@@ -318,7 +342,8 @@ async function buildLessonSegments(
       const mainPath = recordingPath(main.id);
       const audioPath = recordingPath(audioRec.id);
       const align = await computeGroupAlignment([mainPath, audioPath], usedSyncTone);
-      const vSkip = videoSkip(align.skips.get(mainPath) ?? 0, main.deviceId);
+      const vAvOff = align.method === 'tone' ? (align.avOffset.get(mainPath) ?? 0) : 0;
+      const vSkip = videoSkip(align.skips.get(mainPath) ?? 0, main.deviceId, vAvOff);
       const aSkip = align.skips.get(audioPath) ?? 0;
       const aligned = vSkip > 0 || aSkip > 0;
       path = aligned

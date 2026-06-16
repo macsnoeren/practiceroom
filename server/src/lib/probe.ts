@@ -65,6 +65,54 @@ export async function probeDuration(path: string): Promise<number> {
   }
 }
 
+/** First packet timestamp (seconds) of the given stream, or null if none. */
+async function firstPacketPts(path: string, stream: 'v:0' | 'a:0'): Promise<number | null> {
+  try {
+    const { stdout } = await execFileP(ffprobePath(), [
+      '-v',
+      'error',
+      '-select_streams',
+      stream,
+      '-show_entries',
+      'packet=pts_time',
+      '-read_intervals',
+      '%+#1',
+      '-of',
+      'csv=p=0',
+      path,
+    ]);
+    for (const line of stdout.split('\n')) {
+      const t = Number.parseFloat(line);
+      if (Number.isFinite(t)) return t;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The audio/video start offset in a file: `firstVideoPts - firstAudioPts`
+ * (seconds), or 0 when a stream is missing or it cannot be determined.
+ *
+ * The browser camera muxes one synchronized A/V stream (offset ≈ 0), but the Pi
+ * agent muxes two independent inputs (`-f v4l2` + `-f alsa`) and the camera often
+ * needs seconds to deliver its first frame while audio flows immediately — so the
+ * video stream starts well after the audio. Because the sync chirp is detected in
+ * the audio (audio-relative) but the video is trimmed on its own re-zeroed
+ * timeline, this offset must be subtracted from the video skip or the inset ends
+ * up out of sync by exactly this amount.
+ */
+export async function probeAvOffset(path: string): Promise<number> {
+  const [v, a] = await Promise.all([
+    firstPacketPts(path, 'v:0'),
+    firstPacketPts(path, 'a:0'),
+  ]);
+  if (v === null || a === null) return 0;
+  const offset = v - a;
+  return Number.isFinite(offset) ? offset : 0;
+}
+
 export async function probeStreams(
   path: string,
 ): Promise<{ hasVideo: boolean; hasAudio: boolean }> {
