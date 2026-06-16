@@ -70,13 +70,12 @@ export function buildMuxVideoOverAudioArgs(
     ];
   }
 
-  // Use input seeking (-ss) for reliability on the hardened MP4 files.
   return [
-    ...(vSkip > 0 ? ['-ss', vSkip.toFixed(3)] : []), '-i', video.input,
-    ...(aSkip > 0 ? ['-ss', aSkip.toFixed(3)] : []), '-i', audio.input,
+    '-i', video.input,
+    '-i', audio.input,
     '-filter_complex',
-    `[0:v]${videoAlignChain()}[v];` +
-      `[1:a]${audioAlignChain()}[a]`,
+    `[0:v]${videoAlignChain(video.skip)}[v];` +
+      `[1:a]${audioAlignChain(audio.skip)}[a]`,
     '-map', '[v]',
     '-map', '[a]',
     '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
@@ -131,17 +130,26 @@ export interface TimedInput {
   skip?: number;
 }
 
-/** 
- * Video filter prefix that zeroes the timeline and forces a constant frame rate
- * so layers stay locked together. The skip/trim is now handled via -ss.
+/**
+ * Video filter prefix that zeroes the timeline and, when a `skip` is given, trims
+ * the first `skip` seconds off the front. Order matters: we first reset to zero
+ * and force a constant frame rate (fps) to get a clean timeline, then trim on
+ * that timeline, and finally rebase the kept part to zero.
  */
-function videoAlignChain(): string {
-  return `setpts=PTS-STARTPTS,fps=${COMPOSITE_FPS}`;
+function videoAlignChain(skip?: number): string {
+  const base = `setpts=PTS-STARTPTS,fps=${COMPOSITE_FPS}`;
+  return skip && skip > 0
+    ? `${base},trim=start=${skip.toFixed(3)},setpts=PTS-STARTPTS`
+    : base;
 }
 
-/** Audio counterpart of videoAlignChain: resample to a continuous timeline. */
-function audioAlignChain(): string {
-  return `asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0`;
+/** Audio counterpart of videoAlignChain: resample to a continuous timeline first
+ * (the audio analogue of `fps`) so `atrim` actually cuts, then rebase to zero. */
+function audioAlignChain(skip?: number): string {
+  const base = `asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0`;
+  return skip && skip > 0
+    ? `${base},atrim=start=${skip.toFixed(3)},asetpts=PTS-STARTPTS`
+    : base;
 }
 
 /** overlay x:y expression placing an inset in the given corner with a margin. */
@@ -183,33 +191,25 @@ export function buildPipCompositeArgs(
   audio: TimedInput | null,
   output: string,
 ): string[] {
-  const args: string[] = [];
-  args.push(...(main.skip && main.skip > 0 ? ['-ss', main.skip.toFixed(3)] : []), '-i', main.input);
-
-  for (const pip of pips) {
-    args.push(...(pip.skip && pip.skip > 0 ? ['-ss', pip.skip.toFixed(3)] : []), '-i', pip.input);
-  }
-
+  const args: string[] = ['-i', main.input];
+  for (const pip of pips) args.push('-i', pip.input);
   if (audio) {
-    args.push(
-      ...(audio.skip && audio.skip > 0 ? ['-ss', audio.skip.toFixed(3)] : []),
-      '-i',
-      audio.input,
-    );
+    args.push('-i', audio.input);
   } else {
     args.push('-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=48000');
   }
 
   const audioIdx = pips.length + 1;
 
-  // Each video layer is now trimmed via -ss (safe on hardened CFR MP4s).
-  const filters: string[] = [`[0:v]${videoAlignChain()},${SCALE_PAD}[base]`];
+  // Trim each video layer to the common window. This is now frame-accurate
+  // because the input files were hardened to CFR MP4s in Stage 1.
+  const filters: string[] = [`[0:v]${videoAlignChain(main.skip)},${SCALE_PAD}[base]`];
   let last = 'base';
   pips.forEach((pip, i) => {
     const inputIdx = i + 1; // main is input 0
     const width = Math.max(2, Math.round(COMPOSITE_WIDTH * pip.scale));
     filters.push(
-      `[${inputIdx}:v]${videoAlignChain()},scale=${width}:-2,setsar=1,fps=${COMPOSITE_FPS}[p${i}]`,
+      `[${inputIdx}:v]${videoAlignChain(pip.skip)},scale=${width}:-2,setsar=1,fps=${COMPOSITE_FPS}[p${i}]`,
     );
     const outLabel = i === pips.length - 1 ? 'v' : `t${i}`;
     filters.push(`[${last}][p${i}]overlay=${pipOverlayXY(pip.position)}:shortest=1[${outLabel}]`);
@@ -219,7 +219,7 @@ export function buildPipCompositeArgs(
 
   // Audio bed: already trimmed via -ss if present.
   filters.push(
-    `[${audioIdx}:a]${audio ? audioAlignChain() : 'asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0'}[a]`,
+    `[${audioIdx}:a]${audio ? audioAlignChain(audio.skip) : 'asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0'}[a]`,
   );
 
   args.push(
