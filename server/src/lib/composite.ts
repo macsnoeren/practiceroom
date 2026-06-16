@@ -54,8 +54,10 @@ export function buildMuxVideoOverAudioArgs(
   audio: TimedInput,
   output: string,
 ): string[] {
-  const aligned = (video.skip ?? 0) > 0 || (audio.skip ?? 0) > 0;
-  if (!aligned) {
+  const vSkip = video.skip ?? 0;
+  const aSkip = audio.skip ?? 0;
+
+  if (vSkip === 0 && aSkip === 0) {
     // No trim needed: copy the video untouched (fast) and lay the audio under it.
     return [
       '-i', video.input,
@@ -67,14 +69,14 @@ export function buildMuxVideoOverAudioArgs(
       '-shortest', '-y', output,
     ];
   }
-  // Trim each stream to the aligned window inside the filter graph (reliable on
-  // index-less recordings, unlike a -ss seek), which means re-encoding the video.
+
+  // Use input seeking (-ss) for reliability on the hardened MP4 files.
   return [
-    '-i', video.input,
-    '-i', audio.input,
+    ...(vSkip > 0 ? ['-ss', vSkip.toFixed(3)] : []), '-i', video.input,
+    ...(aSkip > 0 ? ['-ss', aSkip.toFixed(3)] : []), '-i', audio.input,
     '-filter_complex',
-    `[0:v]${videoAlignChain(video.skip)}[v];` +
-      `[1:a]${audioAlignChain(audio.skip)},aresample=async=1[a]`,
+    `[0:v]${videoAlignChain()}[v];` +
+      `[1:a]${audioAlignChain()}[a]`,
     '-map', '[v]',
     '-map', '[a]',
     '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
@@ -129,30 +131,17 @@ export interface TimedInput {
   skip?: number;
 }
 
-/**
- * Video filter prefix that zeroes the timeline and, when a `skip` is given, trims
- * the first `skip` seconds off the front.
- *
- * Order matters. These recordings (MediaRecorder WebM, piped Matroska) decode to
- * frames whose timestamps `trim` cannot cut on — a bare `setpts,trim=start=N`
- * no-ops and the layer stays full length. So we first force a constant frame rate
- * (`fps`), which rebuilds a clean monotonic CFR timeline (0, 1/fps, 2/fps, …);
- * `trim=start=N` then cuts reliably on that, and a final `setpts` rebases the
- * kept part to zero. (A bare `-ss` seek is just as unreliable on these
- * index-less files, which is why we regularize-then-trim in the graph.)
+/** 
+ * Video filter prefix that zeroes the timeline and forces a constant frame rate
+ * so layers stay locked together. The skip/trim is now handled via -ss.
  */
-function videoAlignChain(skip: number | undefined): string {
-  return skip && skip > 0
-    ? `setpts=PTS-STARTPTS,fps=${COMPOSITE_FPS},trim=start=${skip.toFixed(3)},setpts=PTS-STARTPTS`
-    : `setpts=PTS-STARTPTS`;
+function videoAlignChain(): string {
+  return `setpts=PTS-STARTPTS,fps=${COMPOSITE_FPS}`;
 }
 
-/** Audio counterpart of videoAlignChain: resample to a continuous timeline first
- * (the audio analogue of `fps`) so `atrim` actually cuts, then rebase to zero. */
-function audioAlignChain(skip: number | undefined): string {
-  return skip && skip > 0
-    ? `asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0,atrim=start=${skip.toFixed(3)},asetpts=PTS-STARTPTS`
-    : `asetpts=PTS-STARTPTS`;
+/** Audio counterpart of videoAlignChain: resample to a continuous timeline. */
+function audioAlignChain(): string {
+  return `asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0`;
 }
 
 /** overlay x:y expression placing an inset in the given corner with a margin. */
@@ -194,21 +183,33 @@ export function buildPipCompositeArgs(
   audio: TimedInput | null,
   output: string,
 ): string[] {
-  const args: string[] = ['-i', main.input];
-  for (const pip of pips) args.push('-i', pip.input);
-  if (audio) args.push('-i', audio.input);
-  else args.push('-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=48000');
+  const args: string[] = [];
+  args.push(...(main.skip && main.skip > 0 ? ['-ss', main.skip.toFixed(3)] : []), '-i', main.input);
+
+  for (const pip of pips) {
+    args.push(...(pip.skip && pip.skip > 0 ? ['-ss', pip.skip.toFixed(3)] : []), '-i', pip.input);
+  }
+
+  if (audio) {
+    args.push(
+      ...(audio.skip && audio.skip > 0 ? ['-ss', audio.skip.toFixed(3)] : []),
+      '-i',
+      audio.input,
+    );
+  } else {
+    args.push('-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=48000');
+  }
+
   const audioIdx = pips.length + 1;
 
-  // Trim each video layer to the common window (from the true start), then force
-  // the constant frame rate so the layers stay locked together.
-  const filters: string[] = [`[0:v]${videoAlignChain(main.skip)},${SCALE_PAD}[base]`];
+  // Each video layer is now trimmed via -ss (safe on hardened CFR MP4s).
+  const filters: string[] = [`[0:v]${videoAlignChain()},${SCALE_PAD}[base]`];
   let last = 'base';
   pips.forEach((pip, i) => {
     const inputIdx = i + 1; // main is input 0
     const width = Math.max(2, Math.round(COMPOSITE_WIDTH * pip.scale));
     filters.push(
-      `[${inputIdx}:v]${videoAlignChain(pip.skip)},scale=${width}:-2,setsar=1,fps=${COMPOSITE_FPS}[p${i}]`,
+      `[${inputIdx}:v]${videoAlignChain()},scale=${width}:-2,setsar=1,fps=${COMPOSITE_FPS}[p${i}]`,
     );
     const outLabel = i === pips.length - 1 ? 'v' : `t${i}`;
     filters.push(`[${last}][p${i}]overlay=${pipOverlayXY(pip.position)}:shortest=1[${outLabel}]`);
@@ -216,10 +217,9 @@ export function buildPipCompositeArgs(
   });
   const videoLabel = pips.length > 0 ? 'v' : 'base';
 
-  // Audio bed: trim to the same window, reset to zero and resample to fill gaps.
-  // (A synthesised silent source has skip 0, so it is only zeroed/resampled.)
+  // Audio bed: already trimmed via -ss if present.
   filters.push(
-    `[${audioIdx}:a]${audio ? audioAlignChain(audio.skip) : 'asetpts=PTS-STARTPTS'},aresample=async=1:first_pts=0,asetpts=PTS-STARTPTS[a]`,
+    `[${audioIdx}:a]${audio ? audioAlignChain() : 'asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0'}[a]`,
   );
 
   args.push(
