@@ -260,6 +260,9 @@ async function buildLessonSegments(
   const videoSkip = (base: number, deviceId: string, avOff = 0) =>
     Math.max(0, base + (offsetSeconds.get(deviceId) ?? 0) - avOff);
 
+  // Map to track original A/V offsets per recording before normalization resets them to 0.
+  const originalOffsets = new Map<string, number>();
+
   const ordered: { startedAt: number; input: SegmentInput; streams: SyncStreamReport[]; method: GroupAlignment['method'] }[] = [];
   for (const members of groups.values()) {
     const audioRec = members.find((r) => r.isAudioTrack) ?? null;
@@ -276,10 +279,17 @@ async function buildLessonSegments(
     const main = videoMembers.find((r) => r.layoutRole === 'main') ?? videoMembers[0]!;
     const pips = videoMembers.filter((r) => r.layoutRole === 'pip' && r.hasVideo);
 
-    // Harden all participant streams first to ensure they have indices/CFR for alignment.
+    // 1. Probe original A/V offsets before normalization resets them to 0.
+    for (const r of [...videoMembers, ...(audioRec ? [audioRec] : [])]) {
+      originalOffsets.set(r.id, await probeAvOffset(recordingPath(r.id)));
+    }
+
+    // 2. Harden all participant streams to ensure they have indices/CFR for alignment.
     const mainPath = await normalizeSegment(lessonId, main, temps);
     const pipPaths = await Promise.all(pips.map((p) => normalizeSegment(lessonId, p, temps)));
     const audioPath = audioRec ? await normalizeSegment(lessonId, audioRec, temps) : null;
+
+    const getOrigAvOff = (recId: string, methode: GroupAlignment['method']) => methode === 'tone' ? (originalOffsets.get(recId) ?? 0) : 0;
 
     const usedSyncTone = members.some((r) => r.syncTone);
 
@@ -293,19 +303,15 @@ async function buildLessonSegments(
       // the sync tone (or duration as a fallback) so they line up frame-exactly.
       const allPaths = [mainPath, ...pipPaths, ...(audioPath ? [audioPath] : [])];
       const align = await computeGroupAlignment(allPaths, usedSyncTone);
-      // The audio→video start gap only matters when we transferred an audio-
-      // detected onset onto the video (the tone method); duration alignment trims
-      // the whole file, so no per-stream gap applies.
-      const avOff = (p: string) => (align.method === 'tone' ? (align.avOffset.get(p) ?? 0) : 0);
-      console.info(
-        `[worker] av-offset lesson=${lessonId} | ` +
-          allPaths.map((p) => `${p.slice(-16)}=${align.avOffset.get(p) ?? 0}s`).join(' | '),
-      );
+
+      console.info(`[worker] av-offset lesson=${lessonId} | ` + 
+        [main, ...pips, ...(audioRec ? [audioRec] : [])].map(r => `${r.id.slice(-4)}=${originalOffsets.get(r.id) ?? 0}s`).join(' | '));
+
       // Video layers get the audio-aligned skip plus their device's offset, minus
       // the file's audio→video gap; the audio bed keeps the plain audio-aligned skip.
-      const mainSkip = videoSkip(align.skips.get(mainPath) ?? 0, main.deviceId, avOff(mainPath));
+      const mainSkip = videoSkip(align.skips.get(mainPath) ?? 0, main.deviceId, getOrigAvOff(main.id, align.method));
       const pipSkips = pips.map((p, i) =>
-        videoSkip(align.skips.get(pipPaths[i]!) ?? 0, p.deviceId, avOff(pipPaths[i]!)),
+        videoSkip(align.skips.get(pipPaths[i]!) ?? 0, p.deviceId, getOrigAvOff(p.id, align.method)),
       );
       const audioSkip = audioPath ? (align.skips.get(audioPath) ?? 0) : 0;
       // The bed: the dedicated audio source, else the main camera's own audio
@@ -353,7 +359,7 @@ async function buildLessonSegments(
       // sync tone (or duration fallback). Aligning needs a re-encode, so the
       // output then goes to an .mkv; without alignment it stays a fast .webm copy.
       const align = await computeGroupAlignment([mainPath, audioPath], usedSyncTone);
-      const vAvOff = align.method === 'tone' ? (align.avOffset.get(mainPath) ?? 0) : 0;
+      const vAvOff = getOrigAvOff(main.id, align.method);
       const vSkip = videoSkip(align.skips.get(mainPath) ?? 0, main.deviceId, vAvOff);
       const aSkip = align.skips.get(audioPath) ?? 0;
       const aligned = vSkip > 0 || aSkip > 0;
