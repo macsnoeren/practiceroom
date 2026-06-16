@@ -96,7 +96,9 @@ async function normalizeSegment(
   temps: string[],
 ): Promise<string> {
   const src = recordingPath(recording.id);
-  const out = normalizedSegmentPath(lessonId, recording.id);
+  // Force .mp4 extension for normalized files because buildCanonicalExternalArgs 
+  // uses H.264/AAC, which FFmpeg refuses to write into a .webm container.
+  const out = normalizedSegmentPath(lessonId, recording.id).replace(/\.[^.]+$/, '.mp4');
 
   // Stage 1: Harden every recording. Re-encode to a clean CFR file with a fresh index.
   // This ensures that subsequent 'trim' filters in buildPipCompositeArgs actually bite,
@@ -314,7 +316,9 @@ async function buildLessonSegments(
           ? { input: mainPath, skip: align.skips.get(mainPath) ?? 0 }
           : null;
 
-      path = composedSegmentPath(lessonId, main.id);
+      // Use .mkv for composed segments as it reliably handles the H.264 + Opus 
+      // mix used in buildPipCompositeArgs.
+      path = composedSegmentPath(lessonId, main.id).replace(/\.[^.]+$/, '.mkv');
       await runFfmpeg(
         buildPipCompositeArgs(
           { input: mainPath, skip: mainSkip },
@@ -353,9 +357,10 @@ async function buildLessonSegments(
       const vSkip = videoSkip(align.skips.get(mainPath) ?? 0, main.deviceId, vAvOff);
       const aSkip = align.skips.get(audioPath) ?? 0;
       const aligned = vSkip > 0 || aSkip > 0;
+      // Muxed files also use H.264 + Opus, so .mkv is the safest container.
       path = aligned
-        ? composedSegmentPath(lessonId, main.id)
-        : normalizedSegmentPath(lessonId, main.id);
+        ? composedSegmentPath(lessonId, main.id).replace(/\.[^.]+$/, '.mkv')
+        : normalizedSegmentPath(lessonId, main.id).replace(/\.[^.]+$/, '.mp4');
       await runFfmpeg(
         buildMuxVideoOverAudioArgs({ input: mainPath, skip: vSkip }, { input: audioPath, skip: aSkip }, path),
       );
@@ -410,7 +415,7 @@ async function brandingInput(
 
   const { hasVideo, hasAudio } = await probeStreams(src);
   if (!hasVideo && !hasAudio) return null;
-  const out = normalizedBrandingPath(lessonId, slot);
+  const out = normalizedBrandingPath(lessonId, slot).replace(/\.[^.]+$/, '.mp4');
   await runFfmpeg(buildCanonicalExternalArgs(src, out, hasVideo, hasAudio));
   temps.push(out);
   return out;
