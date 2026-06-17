@@ -146,7 +146,16 @@ describe('worker: composite video', () => {
     assert.ok(withOverlay.join(' ').includes("text='Niet verspreiden'"));
 
     const both = buildCanonicalExternalArgs('intro.mp4', 'out.mp4', true, true);
-    assert.ok(both.includes('-vf'));
+    // Both streams are normalised together via -filter_complex so A/V sync can be
+    // corrected (aresample) alongside the video scale/calibration.
+    assert.ok(both.includes('-filter_complex'));
+    assert.ok(both.join(' ').includes('scale='));
+    assert.ok(both.join(' ').includes('aresample=async=1'));
+    // A non-zero device calibration offset is baked into the video timestamps.
+    const calibrated = buildCanonicalExternalArgs('intro.mp4', 'out.mp4', true, true, 0.25);
+    assert.ok(calibrated.join(' ').includes('setpts=PTS+(0.250/TB)'));
+    // All-Intra so Stage 2 -ss seeking is frame-exact.
+    assert.ok(both.includes('-g') && both[both.indexOf('-g') + 1] === '1');
     const noAudio = buildCanonicalExternalArgs('intro.mp4', 'out.mp4', true, false);
     assert.ok(noAudio.join(' ').includes('anullsrc'));
     const noVideo = buildCanonicalExternalArgs('audio.m4a', 'out.mp4', false, true);

@@ -95,15 +95,19 @@ async function normalizeSegment(
   recording: Recording,
   temps: string[],
 ): Promise<string> {
+  const device = await prisma.device.findUnique({
+    where: { id: recording.deviceId },
+    select: { videoOffsetMs: true },
+  });
+  const videoOffsetS = (device?.videoOffsetMs ?? 0) / 1000;
+
   const src = recordingPath(recording.id);
   // Force .mp4 extension for normalized files because buildCanonicalExternalArgs 
   // uses H.264/AAC, which FFmpeg refuses to write into a .webm container.
   const out = normalizedSegmentPath(lessonId, recording.id).replace(/\.[^.]+$/, '.mp4');
 
-  // Stage 1: Harden every recording. Re-encode to a clean CFR file with a fresh index.
-  // This ensures that subsequent 'trim' filters in buildPipCompositeArgs actually bite,
-  // especially for the Pi-agent's Matroska-pipe files which lack indices.
-  await runFfmpeg(buildCanonicalExternalArgs(src, out, recording.hasVideo, recording.hasAudio));
+  // Stage 1: Harden & Calibrate. Correct A/V sync and apply device offset immediately.
+  await runFfmpeg(buildCanonicalExternalArgs(src, out, recording.hasVideo, recording.hasAudio, videoOffsetS));
   temps.push(out);
   return out;
 }
@@ -174,7 +178,7 @@ async function computeGroupAlignment(paths: string[], usedSyncTone: boolean): Pr
       }
     });
     if (detections.every((d) => d !== null)) {
-      const toneEnd = SYNC_TONE_DURATION_MS / 1000;
+      const toneEnd = (SYNC_TONE_DURATION_MS + 100) / 1000; // 100ms extra safety margin
       paths.forEach((p, i) => skips.set(p, round3((detections[i] as ToneDetection).onsetS + toneEnd)));
       return { method: 'tone', skips, onset, duration, riseMs, dominance, avOffset };
     }
@@ -257,11 +261,7 @@ async function buildLessonSegments(
   // A video layer's front-trim: the audio-aligned skip, advanced by the device's
   // calibration offset, and pulled back by the file's own audio→video start gap
   // (so an audio-detected chirp lands on the right video frame). Never negative.
-  const videoSkip = (base: number, deviceId: string, avOff = 0) =>
-    Math.max(0, base + (offsetSeconds.get(deviceId) ?? 0) - avOff);
-
-  // Map to track original A/V offsets per recording before normalization resets them to 0.
-  const originalOffsets = new Map<string, number>();
+  const videoSkip = (base: number, _deviceId: string, avOff = 0) => Math.max(0, base - avOff);
 
   const ordered: { startedAt: number; input: SegmentInput; streams: SyncStreamReport[]; method: GroupAlignment['method'] }[] = [];
   for (const members of groups.values()) {
@@ -279,17 +279,10 @@ async function buildLessonSegments(
     const main = videoMembers.find((r) => r.layoutRole === 'main') ?? videoMembers[0]!;
     const pips = videoMembers.filter((r) => r.layoutRole === 'pip' && r.hasVideo);
 
-    // 1. Probe original A/V offsets before normalization resets them to 0.
-    for (const r of [...videoMembers, ...(audioRec ? [audioRec] : [])]) {
-      originalOffsets.set(r.id, await probeAvOffset(recordingPath(r.id)));
-    }
-
-    // 2. Harden all participant streams to ensure they have indices/CFR for alignment.
+    // Harden all participant streams. Calibration is now baked into the files.
     const mainPath = await normalizeSegment(lessonId, main, temps);
     const pipPaths = await Promise.all(pips.map((p) => normalizeSegment(lessonId, p, temps)));
     const audioPath = audioRec ? await normalizeSegment(lessonId, audioRec, temps) : null;
-
-    const getOrigAvOff = (recId: string, methode: GroupAlignment['method']) => methode === 'tone' ? (originalOffsets.get(recId) ?? 0) : 0;
 
     const usedSyncTone = members.some((r) => r.syncTone);
 
@@ -304,14 +297,10 @@ async function buildLessonSegments(
       const allPaths = [mainPath, ...pipPaths, ...(audioPath ? [audioPath] : [])];
       const align = await computeGroupAlignment(allPaths, usedSyncTone);
 
-      console.info(`[worker] av-offset lesson=${lessonId} | ` + 
-        [main, ...pips, ...(audioRec ? [audioRec] : [])].map(r => `${r.id.slice(-4)}=${originalOffsets.get(r.id) ?? 0}s`).join(' | '));
-
-      // Video layers get the audio-aligned skip plus their device's offset, minus
-      // the file's audio→video gap; the audio bed keeps the plain audio-aligned skip.
-      const mainSkip = videoSkip(align.skips.get(mainPath) ?? 0, main.deviceId, getOrigAvOff(main.id, align.method));
+      // Probed avOffset on normalized files should be ~0. Logic remains the same.
+      const mainSkip = videoSkip(align.skips.get(mainPath) ?? 0, main.deviceId, align.avOffset.get(mainPath));
       const pipSkips = pips.map((p, i) =>
-        videoSkip(align.skips.get(pipPaths[i]!) ?? 0, p.deviceId, getOrigAvOff(p.id, align.method)),
+        videoSkip(align.skips.get(pipPaths[i]!) ?? 0, p.deviceId, align.avOffset.get(pipPaths[i]!)),
       );
       const audioSkip = audioPath ? (align.skips.get(audioPath) ?? 0) : 0;
       // The bed: the dedicated audio source, else the main camera's own audio
@@ -354,13 +343,14 @@ async function buildLessonSegments(
       streams.push(streamReport('main', main, mainPath, align, mainSkip));
       pips.forEach((p, i) => streams.push(streamReport('pip', p, pipPaths[i]!, align, pipSkips[i]!)));
       if (audioRec && audioPath) streams.push(streamReport('audio', audioRec, audioPath, align, audioSkip));
-    } else if (audioRec && main.hasVideo) {
+    } else if (audioRec && audioPath && main.hasVideo) {
       // Single camera with the audio source's sound laid under it, aligned by the
       // sync tone (or duration fallback). Aligning needs a re-encode, so the
       // output then goes to an .mkv; without alignment it stays a fast .webm copy.
       const align = await computeGroupAlignment([mainPath, audioPath], usedSyncTone);
-      const vAvOff = getOrigAvOff(main.id, align.method);
-      const vSkip = videoSkip(align.skips.get(mainPath) ?? 0, main.deviceId, vAvOff);
+      // Calibration is baked into the Stage 1 files, so the probed A/V offset on
+      // the normalized main should be ~0 — use it like the composed-source branch.
+      const vSkip = videoSkip(align.skips.get(mainPath) ?? 0, main.deviceId, align.avOffset.get(mainPath));
       const aSkip = align.skips.get(audioPath) ?? 0;
       const aligned = vSkip > 0 || aSkip > 0;
       // Muxed files also use H.264 + Opus, so .mkv is the safest container.

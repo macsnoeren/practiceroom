@@ -277,6 +277,7 @@ export function buildCanonicalExternalArgs(
   output: string,
   hasVideo: boolean,
   hasAudio: boolean,
+  videoOffsetS: number = 0,
 ): string[] {
   const encode = [
     '-c:v',
@@ -298,7 +299,15 @@ export function buildCanonicalExternalArgs(
   ];
 
   if (hasVideo && hasAudio) {
-    return ['-i', input, '-vf', SCALE_PAD, ...encode];
+    return [
+      '-i', input,
+      '-filter_complex',
+      `[0:v]setpts=PTS+(${videoOffsetS.toFixed(3)}/TB),${SCALE_PAD}[v];` +
+      `[0:a]aresample=async=1:first_pts=0[a]`,
+      '-map', '[v]',
+      '-map', '[a]',
+      ...encode,
+    ];
   }
   if (hasVideo && !hasAudio) {
     return [
@@ -309,11 +318,9 @@ export function buildCanonicalExternalArgs(
       '-i',
       'anullsrc=channel_layout=stereo:sample_rate=48000',
       '-filter_complex',
-      `[0:v]${SCALE_PAD}[v]`,
-      '-map',
-      '[v]',
-      '-map',
-      '1:a',
+      `[0:v]setpts=PTS+(${videoOffsetS.toFixed(3)}/TB),${SCALE_PAD}[v]`,
+      '-map', '[v]',
+      '-map', '1:a',
       ...encode,
     ];
   }
