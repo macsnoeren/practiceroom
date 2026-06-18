@@ -7,11 +7,13 @@ import { randomUUID } from 'node:crypto';
 import { after, before, describe, it } from 'node:test';
 import type { FastifyInstance } from 'fastify';
 import ffmpeg from '@ffmpeg-installer/ffmpeg';
+import ffprobe from '@ffprobe-installer/ffprobe';
 import {
   buildBlackVideoArgs,
   buildCanonicalExternalArgs,
   buildConcatArgs,
   buildSilentAudioArgs,
+  buildTrimArgs,
 } from '../src/lib/composite.js';
 import { processQueuedJob, runFfmpeg } from '../src/worker/runner.js';
 import { prisma } from '../src/db.js';
@@ -160,6 +162,44 @@ describe('worker: composite video', () => {
     assert.ok(noAudio.join(' ').includes('anullsrc'));
     const noVideo = buildCanonicalExternalArgs('audio.m4a', 'out.mp4', false, true);
     assert.ok(noVideo.join(' ').includes('color=c=black'));
+  });
+
+  it('builds front-trim args with the trim/atrim filters (pure)', () => {
+    const args = buildTrimArgs('norm.mp4', 2.5, 'trim.mp4');
+    const fc = args[args.indexOf('-filter_complex') + 1]!;
+    // Content-accurate cut via filters (not a demuxer -ss), with the timeline
+    // re-based to zero on both streams.
+    assert.ok(fc.includes('trim=start=2.500'));
+    assert.ok(fc.includes('atrim=start=2.500'));
+    assert.ok(fc.includes('setpts=PTS-STARTPTS'));
+    assert.ok(!args.includes('-ss'));
+    assert.equal(args.at(-1), 'trim.mp4');
+  });
+
+  it('actually cuts the front off a real file (frame-accurate trim)', async () => {
+    const dir = `${process.env.STORAGE_DIR ?? 'storage-test'}/composites`;
+    await mkdir(dir, { recursive: true });
+    const src = `${dir}/trim-src-${randomUUID()}.mp4`;
+    const out = `${dir}/trim-out-${randomUUID()}.mp4`;
+    // A 4s CFR All-Intra clip, like a Stage-1 normalized file.
+    await execFileP(ffmpeg.path, [
+      '-f', 'lavfi', '-i', 'testsrc=duration=4:size=320x240:rate=30',
+      '-f', 'lavfi', '-i', 'sine=frequency=440:duration=4',
+      '-c:v', 'libx264', '-g', '1', '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac', '-shortest', '-y', src,
+    ]);
+    await runFfmpeg(buildTrimArgs(src, 2.5, out));
+    const probe = async (p: string) =>
+      Number.parseFloat(
+        (
+          await execFileP(ffprobe.path, [
+            '-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', p,
+          ])
+        ).stdout.trim(),
+      );
+    // The cut must bite: ~1.5s remains (4 − 2.5), not the full 4s.
+    const dur = await probe(out);
+    assert.ok(dur > 1.0 && dur < 2.0, `trimmed duration ${dur}s should be ≈1.5s`);
   });
 
   it('prepends a crop filter for cropped segments only (pure)', () => {

@@ -40,6 +40,47 @@ export function buildSilentAudioArgs(input: string, output: string): string[] {
 }
 
 /**
+ * ffmpeg args that cut `skip` seconds off the FRONT of a normalized segment and
+ * rewrite it as a fresh standalone file whose timeline restarts at zero.
+ *
+ * This is the reliability cornerstone of the alignment pipeline. Instead of
+ * seeking inside the multi-input composite — where an `-ss` on a secondary
+ * overlay input is silently unreliable (the overlay pairs frames by PTS before
+ * the seek "bites", so the inset keeps its pre-roll/chirp) — every layer is
+ * trimmed on its own, one input at a time, into its own file. The cut uses the
+ * `trim`/`atrim` filters on fully decoded frames (NOT a demuxer `-ss`), so it is
+ * frame-accurate on the Stage-1 CFR/All-Intra files regardless of how the
+ * original container's timestamps behaved. Correctness over speed: it re-encodes
+ * and decodes the whole file. Stage 1 guarantees both a video and audio stream.
+ *
+ * After this, the composite step receives layers that all start at the same real
+ * instant (just after the sync chirp), so it never has to seek — it just stacks
+ * them at t=0.
+ */
+export function buildTrimArgs(input: string, skip: number, output: string): string[] {
+  const s = Math.max(0, skip).toFixed(3);
+  // CRITICAL FILTER ORDER: `fps` MUST come BEFORE `trim`. Putting `fps` AFTER
+  // `trim,setpts` makes the fps filter regenerate frames to fill the ORIGINAL
+  // source duration — i.e. the front-trim is silently undone (verified: a 4s clip
+  // trimmed to 1.5s came back out at 4s with `trim,setpts,fps`, but correct at
+  // 1.5s with `fps,trim,setpts`). This single ordering bug is what defeated every
+  // earlier `trim`-based attempt. `fps` first also guarantees a CFR timeline so
+  // the trim lands on a frame boundary.
+  return [
+    '-i', input,
+    '-filter_complex',
+    `[0:v]fps=${COMPOSITE_FPS},trim=start=${s},setpts=PTS-STARTPTS[v];` +
+      `[0:a]atrim=start=${s},asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0[a]`,
+    '-map', '[v]',
+    '-map', '[a]',
+    '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-g', '1',
+    '-c:a', 'aac', '-ar', '48000',
+    '-movflags', '+faststart',
+    '-y', output,
+  ];
+}
+
+/**
  * ffmpeg args that replace a segment's audio with the audio from a separate
  * recording (the room's audio source), laying that sound under the camera video.
  *

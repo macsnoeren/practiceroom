@@ -11,6 +11,7 @@ import {
   buildMuxVideoOverAudioArgs,
   buildPipCompositeArgs,
   buildSilentAudioArgs,
+  buildTrimArgs,
   type CropRect,
   type PipInput,
 } from '../lib/composite.js';
@@ -108,6 +109,22 @@ async function normalizeSegment(
 
   // Stage 1: Harden & Calibrate. Correct A/V sync and apply device offset immediately.
   await runFfmpeg(buildCanonicalExternalArgs(src, out, recording.hasVideo, recording.hasAudio, videoOffsetS));
+  temps.push(out);
+  return out;
+}
+
+/**
+ * Materialises a front-trimmed copy of a normalized segment: a separate file that
+ * starts exactly at the sync instant, with its timeline re-based to zero. Cutting
+ * each layer as its own single-input step (rather than seeking inside the
+ * multi-input composite, which is unreliable for overlay inputs) is what makes
+ * the trim actually bite — and lets every layer be verified independently.
+ * Returns the input path unchanged when there is nothing meaningful to trim.
+ */
+async function trimToSync(normalizedPath: string, skip: number, temps: string[]): Promise<string> {
+  if (!(skip > 0.001)) return normalizedPath;
+  const out = normalizedPath.replace(/(\.[^.]+)$/, '.trim$1');
+  await runFfmpeg(buildTrimArgs(normalizedPath, skip, out));
   temps.push(out);
   return out;
 }
@@ -303,25 +320,35 @@ async function buildLessonSegments(
         videoSkip(align.skips.get(pipPaths[i]!) ?? 0, p.deviceId, align.avOffset.get(pipPaths[i]!)),
       );
       const audioSkip = audioPath ? (align.skips.get(audioPath) ?? 0) : 0;
-      // The bed: the dedicated audio source, else the main camera's own audio
-      // (trimmed to the audio-aligned window), else a silent track.
-      const audioInput = audioPath
-        ? { input: audioPath, skip: audioSkip }
+
+      // Trim every layer to the sync instant as its OWN file first. After this
+      // each layer starts at t=0 = just after the chirp, so the composite never
+      // seeks — it just stacks them. This is what makes the inset actually cut.
+      const mainTrim = await trimToSync(mainPath, mainSkip, temps);
+      const pipTrims = await Promise.all(
+        pipPaths.map((p, i) => trimToSync(p!, pipSkips[i]!, temps)),
+      );
+      const audioTrim = audioPath ? await trimToSync(audioPath, audioSkip, temps) : null;
+
+      // The bed: the dedicated audio source, else the main camera's own (already
+      // trimmed) audio, else a silent track. Everything is pre-trimmed → skip 0.
+      const audioInput = audioTrim
+        ? { input: audioTrim, skip: 0 }
         : main.hasAudio
-          ? { input: mainPath, skip: align.skips.get(mainPath) ?? 0 }
+          ? { input: mainTrim, skip: 0 }
           : null;
 
-      // Use .mkv for composed segments as it reliably handles the H.264 + Opus 
+      // Use .mkv for composed segments as it reliably handles the H.264 + Opus
       // mix used in buildPipCompositeArgs.
       path = composedSegmentPath(lessonId, main.id).replace(/\.[^.]+$/, '.mkv');
       await runFfmpeg(
         buildPipCompositeArgs(
-          { input: mainPath, skip: mainSkip },
+          { input: mainTrim, skip: 0 },
           pips.map((p, i) => ({
-            input: pipPaths[i]!,
+            input: pipTrims[i]!,
             position: (p.layoutPosition ?? 'bottom-right') as PipInput['position'],
             scale: p.layoutScale ?? 0.28,
-            skip: pipSkips[i]!,
+            skip: 0,
           })),
           audioInput,
           path,
@@ -329,13 +356,14 @@ async function buildLessonSegments(
       );
       // Sanity check: a working front-trim makes the output ≈ shortest trimmed
       // layer. If it instead matches the full source length, trim did not bite.
+      // Probe the trimmed layers directly so the check reflects the real cuts.
       const outDur = await probeDuration(path);
-      const mainTrimmed = (align.duration.get(mainPath) ?? 0) - mainSkip;
-      const pipTrimmed = (align.duration.get(pipPaths[0]!) ?? 0) - (pipSkips[0] ?? 0);
+      const mainTrimmed = await probeDuration(mainTrim);
+      const pipTrimmed = await probeDuration(pipTrims[0]!);
       console.info(
         `[worker] pip-built dur=${round3(outDur)}s | expected≈${round3(Math.min(mainTrimmed, pipTrimmed))}s ` +
-          `(main ${align.duration.get(mainPath)}-${round3(mainSkip)}=${round3(mainTrimmed)}, ` +
-          `pip ${align.duration.get(pipPaths[0]!)}-${round3(pipSkips[0] ?? 0)}=${round3(pipTrimmed)})`,
+          `(main src=${align.duration.get(mainPath)} skip=${round3(mainSkip)} → trimmed=${round3(mainTrimmed)}, ` +
+          `pip src=${align.duration.get(pipPaths[0]!)} skip=${round3(pipSkips[0] ?? 0)} → trimmed=${round3(pipTrimmed)})`,
       );
       temps.push(path);
       crop = null; // a crop does not apply to a composed frame
@@ -353,12 +381,16 @@ async function buildLessonSegments(
       const vSkip = videoSkip(align.skips.get(mainPath) ?? 0, main.deviceId, align.avOffset.get(mainPath));
       const aSkip = align.skips.get(audioPath) ?? 0;
       const aligned = vSkip > 0 || aSkip > 0;
+      // Trim each stream to the sync instant as its own file, then mux with no
+      // further seeking (both already start at t=0).
+      const mainTrim = await trimToSync(mainPath, vSkip, temps);
+      const audioTrim = await trimToSync(audioPath, aSkip, temps);
       // Muxed files also use H.264 + Opus, so .mkv is the safest container.
       path = aligned
         ? composedSegmentPath(lessonId, main.id).replace(/\.[^.]+$/, '.mkv')
         : normalizedSegmentPath(lessonId, main.id).replace(/\.[^.]+$/, '.mp4');
       await runFfmpeg(
-        buildMuxVideoOverAudioArgs({ input: mainPath, skip: vSkip }, { input: audioPath, skip: aSkip }, path),
+        buildMuxVideoOverAudioArgs({ input: mainTrim, skip: 0 }, { input: audioTrim, skip: 0 }, path),
       );
       temps.push(path);
       crop = recordingCrop(main);
