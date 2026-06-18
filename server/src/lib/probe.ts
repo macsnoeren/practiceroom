@@ -113,6 +113,41 @@ export async function probeAvOffset(path: string): Promise<number> {
   return Number.isFinite(offset) ? offset : 0;
 }
 
+/** First/last packet timestamps and packet count of a stream — the raw timeline
+ * facts needed to see whether a file's video starts at zero, is monotonic, and
+ * how many frames it really has. Returns nulls when the stream is absent. */
+export async function probeStreamTimeline(
+  path: string,
+  stream: 'v:0' | 'a:0',
+): Promise<{ first: number | null; last: number | null; count: number }> {
+  try {
+    const { stdout } = await execFileP(
+      ffprobePath(),
+      [
+        '-v', 'error',
+        '-select_streams', stream,
+        '-show_entries', 'packet=pts_time',
+        '-of', 'csv=p=0',
+        path,
+      ],
+      { maxBuffer: 256 * 1024 * 1024 },
+    );
+    let first: number | null = null;
+    let last: number | null = null;
+    let count = 0;
+    for (const line of stdout.split('\n')) {
+      const t = Number.parseFloat(line);
+      if (!Number.isFinite(t)) continue;
+      if (first === null || t < first) first = t;
+      if (last === null || t > last) last = t;
+      count++;
+    }
+    return { first, last, count };
+  } catch {
+    return { first: null, last: null, count: 0 };
+  }
+}
+
 export async function probeStreams(
   path: string,
 ): Promise<{ hasVideo: boolean; hasAudio: boolean }> {

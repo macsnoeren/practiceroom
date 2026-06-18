@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: ['src/index.ts', 'src/worker/index.ts'],
+  entry: ['src/index.ts', 'src/worker/index.ts', 'src/worker/diagnose.ts'],
   format: ['esm'],
   target: 'node20',
   clean: true,
