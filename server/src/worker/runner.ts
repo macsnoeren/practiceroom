@@ -103,11 +103,13 @@ async function normalizeSegment(
   const videoOffsetS = (device?.videoOffsetMs ?? 0) / 1000;
 
   const src = recordingPath(recording.id);
-  // Force .mp4 extension for normalized files because buildCanonicalExternalArgs 
+  // Force .mp4 extension for normalized files because buildCanonicalExternalArgs
   // uses H.264/AAC, which FFmpeg refuses to write into a .webm container.
   const out = normalizedSegmentPath(lessonId, recording.id).replace(/\.[^.]+$/, '.mp4');
 
-  // Stage 1: Harden & Calibrate. Correct A/V sync and apply device offset immediately.
+  // Stage 1: Harden & Calibrate. The capture-side wall-clock keeps A/V in sync
+  // within the file; here we just re-encode to a clean CFR/All-Intra MP4 and
+  // apply the device's video calibration.
   await runFfmpeg(buildCanonicalExternalArgs(src, out, recording.hasVideo, recording.hasAudio, videoOffsetS));
   temps.push(out);
   return out;

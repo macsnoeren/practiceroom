@@ -32,19 +32,31 @@ def ffmpeg_bin() -> str:
     return FFMPEG_BIN
 
 
+# Stamp every incoming packet with the real wall-clock time it arrived, on BOTH
+# the camera and the microphone input. This is the linchpin of multi-cam sync:
+# the V4L2 camera needs seconds to warm up and deliver its first frame while ALSA
+# audio flows immediately, yet each device otherwise timestamps from 0 — hiding
+# that real start gap. Without a shared clock the recording LOOKS A/V-aligned but
+# the video is silently seconds behind its audio, and because the server detects
+# the sync chirp in AUDIO it can never recover that hidden video offset. Wall-clock
+# timestamps put audio and video on one timeline so the muxed file is genuinely in
+# sync (and stays so through the server's chirp-based trim).
+_WALLCLOCK = ["-use_wallclock_as_timestamps", "1"]
+
+
 def _video_input(device: str) -> list[str]:
     """ffmpeg input args for a camera (or a synthetic test pattern)."""
     if device.startswith(TEST_PREFIX):
         # -re plays the generated frames at real time, like a live camera would.
         return ["-re", "-f", "lavfi", "-i", "testsrc=size=640x480:rate=15"]
-    return ["-f", "v4l2", "-i", device]
+    return [*_WALLCLOCK, "-f", "v4l2", "-i", device]
 
 
 def _audio_input(device: str) -> list[str]:
     """ffmpeg input args for a microphone (or a synthetic test tone)."""
     if device.startswith(TEST_PREFIX):
         return ["-re", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000"]
-    return ["-f", "alsa", "-i", device]
+    return [*_WALLCLOCK, "-f", "alsa", "-i", device]
 
 
 def _video_encode_args() -> list[str]:

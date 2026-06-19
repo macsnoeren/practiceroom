@@ -72,7 +72,9 @@ async function pipeline(role: string, src: string, temps: string[]): Promise<voi
   const skip = tone ? tone.onsetS + toneEnd : 0;
   console.log(`   computed skip = ${skip.toFixed(3)}s`);
 
-  // Stage 1: normalize.
+  // Stage 1: normalize. The raw A/V start offset above is the key number: with the
+  // capture-side wall-clock fix it should reflect the camera warm-up (video later
+  // than audio); without it, it reads ~0 (the offset is hidden = unrecoverable).
   const norm = join(tmpdir(), `diag-${randomUUID()}.norm.mp4`);
   temps.push(norm);
   await runFfmpeg(buildCanonicalExternalArgs(src, norm, hasVideo, hasAudio, 0));

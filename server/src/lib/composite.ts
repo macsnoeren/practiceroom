@@ -343,6 +343,10 @@ export function buildCanonicalExternalArgs(
     return [
       '-i', input,
       '-filter_complex',
+      // Apply the device's video calibration; fps in SCALE_PAD front-fills any
+      // video warm-up gap with frozen frames while the matroska/mp4 muxer rebases
+      // the result to zero, preserving the A/V offset that capture encoded via a
+      // shared wall-clock. (aresample async=1 + first_pts=0 anchors audio at 0.)
       `[0:v]setpts=PTS+(${videoOffsetS.toFixed(3)}/TB),${SCALE_PAD}[v];` +
       `[0:a]aresample=async=1:first_pts=0[a]`,
       '-map', '[v]',
