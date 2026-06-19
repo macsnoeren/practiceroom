@@ -43,20 +43,40 @@ def ffmpeg_bin() -> str:
 # sync (and stays so through the server's chirp-based trim).
 _WALLCLOCK = ["-use_wallclock_as_timestamps", "1"]
 
+# Per-input packet buffers. With two independent live inputs feeding one encoder,
+# whichever stream the encoder isn't draining must be buffered or its packets are
+# dropped — that shows up as a lower-than-requested video fps and as audio
+# crackle/desync. A generous queue (esp. on audio, to ride out ALSA underruns)
+# trades a little RAM for clean capture. Overridable for tuning on slow devices.
+_VIDEO_QUEUE = os.environ.get("PR_AGENT_VQUEUE", "1024")
+_AUDIO_QUEUE = os.environ.get("PR_AGENT_AQUEUE", "4096")
+
+# Optionally pin the camera to an explicit capture mode. Left unset by default
+# (ffmpeg negotiates), but if the camera otherwise delivers an odd/low rate
+# (e.g. 26.7 fps instead of 30), set PR_AGENT_FRAMERATE=30 and PR_AGENT_VIDEO_SIZE
+# =1280x720 to a mode the device actually supports.
+_FRAMERATE = os.environ.get("PR_AGENT_FRAMERATE", "")
+_VIDEO_SIZE = os.environ.get("PR_AGENT_VIDEO_SIZE", "")
+
 
 def _video_input(device: str) -> list[str]:
     """ffmpeg input args for a camera (or a synthetic test pattern)."""
     if device.startswith(TEST_PREFIX):
         # -re plays the generated frames at real time, like a live camera would.
         return ["-re", "-f", "lavfi", "-i", "testsrc=size=640x480:rate=15"]
-    return [*_WALLCLOCK, "-f", "v4l2", "-i", device]
+    args = ["-thread_queue_size", _VIDEO_QUEUE, *_WALLCLOCK]
+    if _FRAMERATE:
+        args += ["-framerate", _FRAMERATE]
+    if _VIDEO_SIZE:
+        args += ["-video_size", _VIDEO_SIZE]
+    return [*args, "-f", "v4l2", "-i", device]
 
 
 def _audio_input(device: str) -> list[str]:
     """ffmpeg input args for a microphone (or a synthetic test tone)."""
     if device.startswith(TEST_PREFIX):
         return ["-re", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000"]
-    return [*_WALLCLOCK, "-f", "alsa", "-i", device]
+    return ["-thread_queue_size", _AUDIO_QUEUE, *_WALLCLOCK, "-f", "alsa", "-i", device]
 
 
 def _video_encode_args() -> list[str]:
